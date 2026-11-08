@@ -1,0 +1,43 @@
+name: Release (Windows installer)
+
+# Builds Nova-Setup.exe on Windows and attaches it to a GitHub Release.
+# Run it from the Actions tab ("Run workflow"), or push a tag like v1.0.1.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release tag, e.g. v1.0.0
+        required: true
+        default: v1.0.0
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Build the installer
+        run: npx electron-builder --win nsis --publish never
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.version || github.ref_name }}
+          name: Nova ${{ github.event.inputs.version || github.ref_name }}
+          files: dist/*-setup.exe
+          body: |
+            **Download `nova-assistant-*-setup.exe` below, run it, then add your Claude API key in Settings.**
+
+            - Hold Space to talk, Alt+Space to show or hide Nova.
+            - The first voice use downloads the Whisper speech model (about 80 MB) once.
+            - Windows may show "Windows protected your PC" because the installer is not code-signed yet. Click **More info**, then **Run anyway**.
