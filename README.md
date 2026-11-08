@@ -7,6 +7,7 @@
 Talk to it, and it answers out loud. It opens apps, finds music, checks your PC, tidies Downloads, sets reminders, searches the web and remembers what matters to you.
 
 [![CI](https://github.com/osamaayub/nova-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/osamaayub/nova-assistant/actions/workflows/ci.yml)
+[![Download for Windows](https://img.shields.io/badge/Download-Windows_installer-0078D4?logo=windows&logoColor=white)](https://github.com/osamaayub/nova-assistant/releases/latest)
 ![Electron](https://img.shields.io/badge/Electron-44-47848F?logo=electron&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
 ![Claude](https://img.shields.io/badge/Claude-tool_use-191919?logo=anthropic&logoColor=white)
@@ -57,7 +58,11 @@ flowchart LR
 - **Your key is encrypted** with Windows (Electron `safeStorage`) and never reaches the window.
 - **Locked-down window.** Sandboxed, context isolation, a tight Content Security Policy, and microphone is the only permission granted.
 
-## Run it on Windows
+## Download
+
+Get the latest **Windows installer** from [Releases](https://github.com/osamaayub/nova-assistant/releases/latest), run it, and add your Claude API key in Settings. The installer isn't code-signed yet, so Windows may say "Windows protected your PC": click **More info**, then **Run anyway**.
+
+## Run it from the code
 
 You need [Node.js 22+](https://nodejs.org) and a [Claude API key](https://console.anthropic.com) (you pay Anthropic directly for what you use).
 
@@ -72,7 +77,7 @@ Then click **Add API key**, paste your key, and hold **Space** to talk. **Alt+Sp
 
 The first time you talk, Nova downloads the Whisper speech model (about 80 MB). If you pick the natural Kokoro voice, that downloads once too (about 90 MB). Both are cached after that.
 
-**Make an installer:** `npm run build:win` creates `dist/nova-assistant-1.0.0-setup.exe`.
+**Make an installer:** `npm run build:win` creates `dist/nova-assistant-1.0.0-setup.exe`. The Release workflow does this on GitHub and attaches it to a release.
 
 ## Costs
 
