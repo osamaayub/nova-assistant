@@ -6,6 +6,7 @@ import type { AgentEvent, Settings } from '../shared/types'
 import { AgentService } from './agent/service'
 import { MemoryStore } from './memory/store'
 import { createPlatform } from './platform'
+import { listOllamaModels } from './agent/providers/ollama'
 import { clearApiKey, publicSettings, saveApiKey, saveSettings } from './settings/store'
 
 let win: BrowserWindow | null = null
@@ -83,6 +84,19 @@ app.whenReady().then(async () => {
   ipcMain.handle('settings:clearKey', () => {
     clearApiKey()
     return publicSettings()
+  })
+  ipcMain.handle('ollama:check', async (_e, url: unknown) => {
+    try {
+      return { ok: true, models: await listOllamaModels(String(url ?? '')) }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      return {
+        ok: false,
+        error: /fetch failed|ECONNREFUSED|timeout|aborted/i.test(msg)
+          ? 'Ollama is not running at that address. Install it from ollama.com and open it.'
+          : msg
+      }
+    }
   })
   ipcMain.handle('memory:list', () => memory.list())
   ipcMain.handle('memory:delete', (_e, id: unknown) => {
