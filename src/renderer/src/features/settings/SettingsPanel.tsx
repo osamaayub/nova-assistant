@@ -30,6 +30,15 @@ export function SettingsPanel({
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([])
   const [facts, setFacts] = useState<Fact[]>([])
   const [app, setApp] = useState({ name: '', path: '' })
+  const [ollama, setOllama] = useState<{ checking?: boolean; models?: string[]; error?: string }>(
+    {}
+  )
+
+  const checkOllama = async (): Promise<void> => {
+    setOllama({ checking: true })
+    const res = await nova.checkOllama(settings.ollamaUrl)
+    setOllama(res.ok ? { models: res.models } : { error: res.error })
+  }
 
   useEffect(() => {
     void systemVoices().then((v) => setVoices(v.filter((x) => x.lang.startsWith('en'))))
@@ -65,56 +74,155 @@ export function SettingsPanel({
       </header>
 
       <section>
-        <h3>Claude API key</h3>
-        <p className="hint">
-          {settings.hasApiKey
-            ? 'A key is saved and encrypted with Windows.'
-            : 'Nova needs your own key from the Claude Console. You pay Anthropic directly for what you use.'}
-        </p>
-        <div className="row">
-          <input
-            type="password"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder={settings.hasApiKey ? 'Paste a new key to replace it' : 'sk-ant-…'}
-            value={key}
-            onChange={(e) => setKey(e.target.value)}
-            aria-label="Claude API key"
-          />
-          <button className="btn primary" disabled={!key.trim()} onClick={saveKey}>
-            Save
+        <h3>Brain</h3>
+        <div className="chips" role="radiogroup" aria-label="Brain">
+          <button
+            className={`chip ${settings.provider === 'ollama' ? 'on' : ''}`}
+            role="radio"
+            aria-checked={settings.provider === 'ollama'}
+            onClick={() => save({ provider: 'ollama' })}
+          >
+            Free local AI (Ollama)
+          </button>
+          <button
+            className={`chip ${settings.provider === 'claude' ? 'on' : ''}`}
+            role="radio"
+            aria-checked={settings.provider === 'claude'}
+            onClick={() => save({ provider: 'claude' })}
+          >
+            Claude
           </button>
         </div>
-        {settings.hasApiKey && (
-          <button className="link" onClick={async () => onChange(await nova.clearApiKey())}>
-            Remove saved key
-          </button>
-        )}
-        {keyMsg && <p className={keyMsg.ok ? 'ok' : 'error'}>{keyMsg.text}</p>}
-      </section>
 
-      <section>
-        <h3>Brain</h3>
-        <label>
-          Model
-          <select
-            value={settings.model}
-            onChange={(e) => save({ model: e.target.value as ModelId })}
-          >
-            {MODELS.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        {settings.provider === 'ollama' ? (
+          <>
+            <p className="hint" style={{ marginTop: 10 }}>
+              Runs on your PC: no key, no cost, works offline. Slower and less clever than Claude,
+              and it can&apos;t search the web.
+            </p>
+            <ol className="steps">
+              <li>Install Ollama from ollama.com and open it.</li>
+              <li>
+                In a terminal, run <code>ollama pull {settings.ollamaModel || 'qwen3:8b'}</code>{' '}
+                (about 5 GB, once).
+              </li>
+              <li>Click Check connection below.</li>
+            </ol>
+            <label>
+              Ollama address
+              <input
+                value={settings.ollamaUrl}
+                onChange={(e) => onChange({ ...settings, ollamaUrl: e.target.value })}
+                onBlur={(e) => save({ ollamaUrl: e.target.value })}
+                spellCheck={false}
+              />
+            </label>
+            <label>
+              Model
+              {ollama.models?.length ? (
+                <select
+                  value={settings.ollamaModel}
+                  onChange={(e) => save({ ollamaModel: e.target.value })}
+                >
+                  {!ollama.models.includes(settings.ollamaModel) && (
+                    <option value={settings.ollamaModel}>
+                      {settings.ollamaModel} (not installed)
+                    </option>
+                  )}
+                  {ollama.models.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  value={settings.ollamaModel}
+                  onChange={(e) => onChange({ ...settings, ollamaModel: e.target.value })}
+                  onBlur={(e) => save({ ollamaModel: e.target.value })}
+                  spellCheck={false}
+                />
+              )}
+            </label>
+            <div className="row" style={{ marginTop: 10 }}>
+              <button className="btn" disabled={ollama.checking} onClick={checkOllama}>
+                {ollama.checking ? 'Checking…' : 'Check connection'}
+              </button>
+            </div>
+            {ollama.error && <p className="error">{ollama.error}</p>}
+            {ollama.models && (
+              <p className="ok">
+                {ollama.models.length
+                  ? `Connected. ${ollama.models.length} model${ollama.models.length === 1 ? '' : 's'} installed.`
+                  : 'Connected, but no models are installed yet. Run the ollama pull command above.'}
+              </p>
+            )}
+            <p className="hint">
+              Good models with tools: qwen3:8b (recommended), llama3.1:8b, or qwen3:4b for slower
+              PCs.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="hint" style={{ marginTop: 10 }}>
+              {settings.hasApiKey
+                ? 'A key is saved and encrypted with Windows.'
+                : 'Smarter and faster, with web search. Needs your own key from the Claude Console; you pay Anthropic for what you use.'}
+            </p>
+            <div className="row">
+              <input
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder={settings.hasApiKey ? 'Paste a new key to replace it' : 'sk-ant-…'}
+                value={key}
+                onChange={(e) => setKey(e.target.value)}
+                aria-label="Claude API key"
+              />
+              <button className="btn primary" disabled={!key.trim()} onClick={saveKey}>
+                Save
+              </button>
+            </div>
+            {settings.hasApiKey && (
+              <button className="link" onClick={async () => onChange(await nova.clearApiKey())}>
+                Remove saved key
+              </button>
+            )}
+            {keyMsg && <p className={keyMsg.ok ? 'ok' : 'error'}>{keyMsg.text}</p>}
+            <label>
+              Model
+              <select
+                value={settings.model}
+                onChange={(e) => save({ model: e.target.value as ModelId })}
+              >
+                {MODELS.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={settings.webSearch}
+                onChange={(e) => save({ webSearch: e.target.checked })}
+              />
+              Search the web for current answers ($10 per 1,000 searches on your Claude bill)
+            </label>
+          </>
+        )}
+
         <label className="check">
           <input
             type="checkbox"
-            checked={settings.webSearch}
-            onChange={(e) => save({ webSearch: e.target.checked })}
+            checked={settings.agentMode === 'team'}
+            onChange={(e) => save({ agentMode: e.target.checked ? 'team' : 'single' })}
           />
-          Search the web for current answers ($10 per 1,000 searches on your Claude bill)
+          <span>
+            Team of agents. Nova hands jobs to a PC agent, a Files agent and a Research agent.
+            Better at multi-step requests; turn off for quicker single commands.
+          </span>
         </label>
       </section>
 
