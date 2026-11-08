@@ -18,6 +18,7 @@ const api: NovaApi = {
   clearApiKey: () => ipcRenderer.invoke('settings:clearKey'),
   listFacts: () => ipcRenderer.invoke('memory:list'),
   deleteFact: (id) => ipcRenderer.invoke('memory:delete', id),
+  checkOllama: (url) => ipcRenderer.invoke('ollama:check', url),
   platform: process.platform
 }
 
