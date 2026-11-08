@@ -6,7 +6,11 @@ import type { AgentEvent, Fact, NovaApi, PublicSettings, Settings } from '../../
  */
 function browserFake(): NovaApi {
   let settings: PublicSettings = {
+    provider: 'ollama',
     model: 'claude-sonnet-5-5',
+    ollamaUrl: 'http://127.0.0.1:11434',
+    ollamaModel: 'qwen3:8b',
+    agentMode: 'team',
     character: 'nova',
     customName: 'Atlas',
     customPersonality: 'Calm and encouraging.',
@@ -37,7 +41,8 @@ function browserFake(): NovaApi {
           id: 'a',
           name: 'play_music',
           label: 'Finding music',
-          status: 'running'
+          status: 'running',
+          agent: 'PC agent'
         })
         await wait(700)
         emit({
@@ -47,7 +52,8 @@ function browserFake(): NovaApi {
           name: 'play_music',
           label: 'Finding music',
           status: 'done',
-          summary: 'Searched YouTube: lofi beats'
+          summary: 'Searched YouTube: lofi beats',
+          agent: 'PC agent'
         })
       }
       if (/organi[sz]e/i.test(text)) {
@@ -57,7 +63,8 @@ function browserFake(): NovaApi {
           id: 'b',
           name: 'organize_downloads',
           label: 'Organizing Downloads',
-          status: 'running'
+          status: 'running',
+          agent: 'Files agent'
         })
         emit({
           type: 'confirm',
@@ -120,6 +127,9 @@ function browserFake(): NovaApi {
     },
     async listFacts() {
       return facts
+    },
+    async checkOllama() {
+      return { ok: true as const, models: ['qwen3:8b', 'llama3.1:8b'] }
     },
     async deleteFact(id) {
       facts = facts.filter((f) => f.id !== id)
