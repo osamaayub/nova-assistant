@@ -1,34 +1,30 @@
 import { describe, expect, it } from 'vitest'
-import type Anthropic from '@anthropic-ai/sdk'
-import { runTurn, trim, withoutThinking } from '../src/main/agent/loop'
-import { TOOLS, toApiTools } from '../src/main/agent/tools'
+import { runTurn, toolSpecs, trim } from '../src/main/agent/loop'
+import { TOOLS } from '../src/main/agent/tools'
+import type { Msg, Part } from '../src/main/agent/types'
 import type { AgentEvent } from '../src/shared/types'
-import { fakeClient, fakePlatform, memory } from './helpers'
+import { fakePlatform, fakeProvider, memory } from './helpers'
 
-const text = (t: string) => ({ type: 'text', text: t, citations: null }) as Anthropic.TextBlock
-const toolUse = (id: string, name: string, input: unknown) =>
-  ({
-    type: 'tool_use',
-    id,
-    name,
-    input,
-    caller: { type: 'direct' }
-  }) as unknown as Anthropic.ToolUseBlock
-const thinking = { type: 'thinking', thinking: '', signature: 'sig' } as Anthropic.ThinkingBlock
+const text = (t: string): Part => ({ type: 'text', text: t })
+const call = (id: string, name: string, input: unknown): Part => ({
+  type: 'tool_call',
+  id,
+  name,
+  input
+})
 
 async function run(
-  script: Partial<Anthropic.Message>[],
-  opts: { confirm?: boolean; userText?: string; maxSteps?: number } = {}
+  replies: Parameters<typeof fakeProvider>[0],
+  opts: { maxSteps?: number; agent?: string } = {}
 ) {
-  const { client, sent } = fakeClient(script)
+  const { provider, seen } = fakeProvider(replies)
   const { platform, calls } = fakePlatform()
   const events: AgentEvent[] = []
-  const history = await runTurn({
-    client,
-    model: 'claude-sonnet-5-5',
+  const res = await runTurn({
+    provider,
     system: 'sys',
     history: [],
-    userText: opts.userText ?? 'open spotify',
+    userText: 'open spotify',
     tools: TOOLS,
     webSearch: true,
     ctx: {
@@ -39,16 +35,16 @@ async function run(
     },
     turnId: 't1',
     emit: (e) => events.push(e),
-    confirm: async () => opts.confirm ?? true,
-    maxSteps: opts.maxSteps
+    confirm: async () => true,
+    ...opts
   })
-  return { history, sent, events, calls }
+  return { ...res, seen, events, calls }
 }
 
-describe('agent loop', () => {
+describe('agent loop (any brain)', () => {
   it('answers without tools in one call', async () => {
-    const r = await run([{ content: [text('Hello there.')], stop_reason: 'end_turn' }])
-    expect(r.sent).toHaveLength(1)
+    const r = await run([{ parts: [text('Hello there.')], stop: 'end' }])
+    expect(r.seen).toHaveLength(1)
     expect(
       r.events
         .filter((e) => e.type === 'text')
@@ -61,101 +57,83 @@ describe('agent loop', () => {
 
   it('runs a tool, sends the result back, then finishes', async () => {
     const r = await run([
-      {
-        content: [thinking, toolUse('tu1', 'open_app', { app: 'Spotify' })],
-        stop_reason: 'tool_use'
-      },
-      { content: [text('Spotify is open.')], stop_reason: 'end_turn' }
+      { parts: [call('c1', 'open_app', { app: 'Spotify' })], stop: 'tool_use' },
+      { parts: [text('Spotify is open.')], stop: 'end' }
     ])
     expect(r.calls).toEqual(['url:spotify:'])
-    const second = r.sent[1].messages
-    // The second request carries the thinking block (needed mid-turn) and the tool result.
-    expect((second[1].content as { type: string }[]).map((b) => b.type)).toEqual([
-      'thinking',
-      'tool_use'
+    expect(r.seen[1].messages[2].parts).toEqual([
+      { type: 'tool_result', id: 'c1', name: 'open_app', content: 'Opened Spotify.' }
     ])
-    expect(second[2].content).toEqual([
-      { type: 'tool_result', tool_use_id: 'tu1', content: 'Opened Spotify.' }
-    ])
-    // The saved history no longer has thinking blocks.
-    expect(JSON.stringify(r.history)).not.toContain('"thinking"')
     expect(
       r.events.filter((e) => e.type === 'tool').map((e) => (e as { status: string }).status)
     ).toEqual(['running', 'done'])
   })
 
-  it('sends the web search tool and no sampling parameters', async () => {
-    const r = await run([{ content: [text('ok')] }])
-    const req = r.sent[0] as unknown as Record<string, unknown>
-    expect((req.tools as { name: string }[]).map((t) => t.name)).toContain('web_search')
-    expect(req).not.toHaveProperty('temperature')
-    expect(req.output_config).toEqual({ effort: 'low' })
-    expect((req.messages as unknown[]).at(-1)).toEqual({ role: 'user', content: 'open spotify' })
+  it('does not offer web search to a brain that cannot search', async () => {
+    const r = await run([{ parts: [text('ok')], stop: 'end' }])
+    expect(r.seen[0].webSearch).toBe(false)
   })
 
-  it('reports bad tool input to Claude instead of crashing', async () => {
+  it('reports bad tool input to the model instead of crashing', async () => {
     const r = await run([
-      { content: [toolUse('tu1', 'set_timer', { minutes: 'soon' })], stop_reason: 'tool_use' },
-      { content: [text('How many minutes?')] }
+      { parts: [call('c1', 'set_timer', { minutes: 'soon' })], stop: 'tool_use' },
+      { parts: [text('How many minutes?')], stop: 'end' }
     ])
-    const result = (r.sent[1].messages[2].content as Anthropic.ToolResultBlockParam[])[0]
-    expect(result.is_error).toBe(true)
-    expect(String(result.content)).toMatch(/Invalid input/)
+    const res = r.seen[1].messages[2].parts[0] as Extract<Part, { type: 'tool_result' }>
+    expect(res.isError).toBe(true)
+    expect(res.content).toMatch(/Invalid input/)
   })
 
   it('stops after the step limit with a spoken note', async () => {
-    const loop = Array.from({ length: 5 }, (_, i) => ({
-      content: [toolUse(`t${i}`, 'get_datetime', {})],
-      stop_reason: 'tool_use' as const
-    }))
-    const r = await run(loop, { maxSteps: 3 })
-    expect(r.sent).toHaveLength(3)
-    expect(r.events.some((e) => e.type === 'text' && /too many steps/.test(e.delta))).toBe(true)
+    const r = await run(() => ({ parts: [call('x', 'get_datetime', {})], stop: 'tool_use' }), {
+      maxSteps: 3
+    })
+    expect(r.seen).toHaveLength(3)
+    expect(r.text).toMatch(/too many steps/)
     expect(r.history.at(-1)?.role).toBe('assistant')
   })
 
-  it('continues after a paused web search with a user turn, never a trailing assistant turn', async () => {
+  it('continues a paused turn with a user message', async () => {
     const r = await run([
-      { content: [text('Searching')], stop_reason: 'pause_turn' },
-      { content: [text('Found it.')] }
+      { parts: [text('Searching')], stop: 'pause' },
+      { parts: [text('Found it.')], stop: 'end' }
     ])
-    expect(r.sent[1].messages.at(-1)).toEqual({ role: 'user', content: 'Continue.' })
+    expect(r.seen[1].messages.at(-1)).toEqual({
+      role: 'user',
+      parts: [{ type: 'text', text: 'Continue.' }]
+    })
+  })
+
+  it('keeps a specialist quiet: no text, start or done events, but returns its report', async () => {
+    const r = await run([{ parts: [text('Opened it.')], stop: 'end' }], { agent: 'PC agent' })
+    expect(r.events.filter((e) => ['text', 'start', 'done'].includes(e.type))).toEqual([])
+    expect(r.text).toBe('Opened it.')
   })
 })
 
 describe('history', () => {
-  it('drops thinking blocks but keeps other content', () => {
-    const out = withoutThinking([
-      { role: 'assistant', content: [thinking, text('hi')] as Anthropic.ContentBlockParam[] }
-    ])
-    expect(out[0].content).toEqual([text('hi')])
-  })
-
   it('trims to whole turns and never splits a tool call from its result', () => {
-    const h: Anthropic.MessageParam[] = []
+    const h: Msg[] = []
     for (let i = 0; i < 15; i++) {
-      h.push({ role: 'user', content: `q${i}` })
-      h.push({
-        role: 'assistant',
-        content: [toolUse(`t${i}`, 'get_datetime', {})] as Anthropic.ContentBlockParam[]
-      })
+      h.push({ role: 'user', parts: [text(`q${i}`)] })
+      h.push({ role: 'assistant', parts: [call(`t${i}`, 'get_datetime', {})] })
       h.push({
         role: 'user',
-        content: [{ type: 'tool_result', tool_use_id: `t${i}`, content: 'x' }]
+        parts: [{ type: 'tool_result', id: `t${i}`, name: 'get_datetime', content: 'x' }]
       })
-      h.push({ role: 'assistant', content: 'a' })
+      h.push({ role: 'assistant', parts: [text('a')] })
     }
     const t = trim(h, 12)
-    expect(t[0]).toEqual({ role: 'user', content: 'q3' })
+    expect(t[0]).toEqual({ role: 'user', parts: [text('q3')] })
     expect(t).toHaveLength(48)
   })
 })
 
 describe('tool definitions', () => {
-  it('converts every tool to a valid API schema', () => {
-    for (const t of toApiTools(TOOLS)) {
-      expect(t.input_schema.type).toBe('object')
-      expect(t.input_schema).not.toHaveProperty('$schema')
+  it('converts every tool to an object schema', () => {
+    for (const t of toolSpecs(TOOLS)) {
+      expect(t.schema.type).toBe('object')
+      expect(t.schema).not.toHaveProperty('$schema')
       expect(t.description.length).toBeGreaterThan(20)
     }
   })

@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type Anthropic from '@anthropic-ai/sdk'
 import { MemoryStore } from '../src/main/memory/store'
-import type { StreamingClient } from '../src/main/agent/loop'
+import type { StreamingClient } from '../src/main/agent/providers/claude'
+import type { ChatRequest, ModelReply, Provider } from '../src/main/agent/types'
 import type { Platform } from '../src/main/agent/tools/types'
 
 export function fakePlatform(os: NodeJS.Platform = 'win32') {
@@ -30,7 +31,7 @@ export function fakePlatform(os: NodeJS.Platform = 'win32') {
 
 export const memory = () => MemoryStore.open(null)
 
-/** A fake Claude: each call returns the next scripted message and records what it was sent. */
+/** A fake Claude client: each call returns the next scripted message and records what it was sent. */
 export function fakeClient(script: Partial<Anthropic.Message>[]) {
   const sent: Anthropic.MessageCreateParamsNonStreaming[] = []
   let i = 0
@@ -62,4 +63,23 @@ export function fakeClient(script: Partial<Anthropic.Message>[]) {
     }
   }
   return { client, sent }
+}
+
+/** A fake brain for the loop and team tests: replies are scripted per call. */
+export function fakeProvider(script: ModelReply[] | ((req: ChatRequest, i: number) => ModelReply)) {
+  const seen: ChatRequest[] = []
+  let i = 0
+  const provider: Provider = {
+    id: 'ollama',
+    label: 'Fake',
+    canSearchWeb: false,
+    async chat(req) {
+      seen.push(JSON.parse(JSON.stringify({ ...req, onText: undefined, signal: undefined })))
+      const reply = typeof script === 'function' ? script(req, i++) : script[i++]
+      for (const p of reply.parts) if (p.type === 'text') req.onText?.(p.text)
+      return reply
+    },
+    finishTurn: (m) => m
+  }
+  return { provider, seen }
 }
