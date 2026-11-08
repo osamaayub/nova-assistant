@@ -43,7 +43,10 @@ export function Transcript({
                 <span className="step-icon" aria-hidden="true">
                   {s.status === 'running' ? <span className="spinner" /> : ICON[s.status]}
                 </span>
-                <span>{s.status === 'running' ? `${s.label}…` : s.summary || s.label}</span>
+                <span>
+                  {s.agent && <span className="agent">{s.agent} · </span>}
+                  {s.status === 'running' ? `${s.label}…` : s.summary || s.label}
+                </span>
               </div>
             ))}
             {thinking && (

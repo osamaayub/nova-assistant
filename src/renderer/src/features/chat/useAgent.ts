@@ -6,6 +6,7 @@ export type Step = {
   label: string
   status: 'running' | 'done' | 'error' | 'declined'
   summary?: string
+  agent?: string
 }
 export type Item =
   | { kind: 'user'; id: string; text: string }
@@ -70,7 +71,13 @@ export function reducer(state: AgentState, action: Action): AgentState {
         ...state,
         items: patchLast(state.items, (a) => {
           const exists = a.steps.some((s) => s.id === e.id)
-          const step: Step = { id: e.id, label: e.label, status: e.status, summary: e.summary }
+          const step: Step = {
+            id: e.id,
+            label: e.label,
+            status: e.status,
+            summary: e.summary,
+            agent: e.agent
+          }
           return {
             ...a,
             steps: exists ? a.steps.map((s) => (s.id === e.id ? step : s)) : [...a.steps, step]
