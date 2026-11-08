@@ -1,36 +1,41 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { randomUUID } from 'node:crypto'
-import type { AgentEvent } from '../../shared/types'
+import type { AgentEvent, Settings } from '../../shared/types'
 import type { MemoryStore } from '../memory/store'
 import { getSettings, readApiKey } from '../settings/store'
 import { runTurn } from './loop'
 import { buildSystemPrompt } from './prompt'
-import { TOOLS } from './tools'
+import { claudeProvider } from './providers/claude'
+import { ollamaProvider } from './providers/ollama'
+import { mainAgentTools, SPECIALISTS, specialistPrompt, type Specialist } from './team'
 import type { Platform } from './tools/types'
+import type { Msg, Provider } from './types'
+
+const SPECIALIST_STEPS = 6
+
+/** Builds the brain the user chose in Settings. Ollama needs no key. */
+export function createProvider(s: Settings, apiKey: string | null): Provider {
+  if (s.provider === 'ollama') return ollamaProvider(s.ollamaUrl, s.ollamaModel)
+  if (!apiKey)
+    throw new Error(
+      'Add your Claude API key in Settings, or switch the brain to free local AI (Ollama).'
+    )
+  return claudeProvider(new Anthropic({ apiKey, maxRetries: 2, timeout: 60_000 }), s.model)
+}
 
 /** Holds the conversation, the running turn and pending "Allow?" questions for one window. */
 export class AgentService {
-  private history: Anthropic.MessageParam[] = []
+  private history: Msg[] = []
+  private historyProvider = ''
   private controller: AbortController | null = null
   private pending = new Map<string, (ok: boolean) => void>()
-  private client: Anthropic | null = null
-  private clientKey = ''
 
   constructor(
     private platform: Platform,
     private memory: MemoryStore,
-    private emit: (e: AgentEvent) => void
+    private emit: (e: AgentEvent) => void,
+    private makeProvider: (s: Settings) => Provider = (s) => createProvider(s, readApiKey())
   ) {}
-
-  private getClient(): Anthropic {
-    const key = readApiKey()
-    if (!key) throw new Error('Add your Claude API key in Settings first.')
-    if (!this.client || key !== this.clientKey) {
-      this.client = new Anthropic({ apiKey: key, maxRetries: 2, timeout: 60_000 })
-      this.clientKey = key
-    }
-    return this.client
-  }
 
   async send(text: string): Promise<void> {
     const userText = text.trim().slice(0, 4000)
@@ -41,29 +46,64 @@ export class AgentService {
     this.controller = controller
     const settings = getSettings()
     try {
-      this.history = await runTurn({
-        client: this.getClient(),
-        model: settings.model,
-        system: buildSystemPrompt(settings, this.memory.list(), new Date(), this.platform.os),
+      const provider = this.makeProvider(settings)
+      // A conversation started on one brain isn't sent to another (formats differ).
+      if (this.historyProvider !== provider.id) this.history = []
+      this.historyProvider = provider.id
+      const ctx = {
+        platform: this.platform,
+        memory: this.memory,
+        customApps: settings.customApps,
+        now: () => new Date()
+      }
+      const confirm = (id: string, title: string, detail: string): Promise<boolean> =>
+        new Promise<boolean>((resolve) => {
+          this.pending.set(id, resolve)
+          this.emit({ type: 'confirm', turnId, id, title, detail })
+        })
+
+      // A specialist gets a fresh, short conversation with only its own tools.
+      const delegate = async (s: Specialist, task: string): Promise<string> => {
+        const res = await runTurn({
+          provider,
+          system: specialistPrompt(s, provider.canSearchWeb && settings.webSearch),
+          history: [],
+          userText: task,
+          tools: s.tools,
+          webSearch: s.webSearch && settings.webSearch,
+          ctx,
+          turnId,
+          emit: this.emit,
+          confirm,
+          signal: controller.signal,
+          maxSteps: SPECIALIST_STEPS,
+          agent: s.name
+        })
+        return res.text
+      }
+
+      const team = settings.agentMode === 'team'
+      const result = await runTurn({
+        provider,
+        system: buildSystemPrompt(settings, this.memory.list(), new Date(), this.platform.os, {
+          mode: settings.agentMode,
+          canSearch: provider.canSearchWeb && settings.webSearch,
+          team: team
+            ? SPECIALISTS.map((s) => ({ tool: s.tool, name: s.name, when: s.when }))
+            : undefined
+        }),
         history: this.history,
         userText,
-        tools: TOOLS,
-        webSearch: settings.webSearch,
-        ctx: {
-          platform: this.platform,
-          memory: this.memory,
-          customApps: settings.customApps,
-          now: () => new Date()
-        },
+        tools: mainAgentTools(settings.agentMode, delegate),
+        // In team mode the Research agent searches; in single mode Nova searches itself.
+        webSearch: !team && settings.webSearch,
+        ctx,
         turnId,
         emit: this.emit,
-        confirm: (id, title, detail) =>
-          new Promise<boolean>((resolve) => {
-            this.pending.set(id, resolve)
-            this.emit({ type: 'confirm', turnId, id, title, detail })
-          }),
+        confirm,
         signal: controller.signal
       })
+      this.history = result.history
     } catch (e) {
       if (controller.signal.aborted) this.emit({ type: 'done', turnId })
       else this.emit({ type: 'error', turnId, message: friendlyError(e) })
@@ -100,7 +140,7 @@ export function friendlyError(e: unknown): string {
   if (e instanceof Anthropic.APIConnectionError)
     return "I can't reach Claude. Check your internet connection."
   if (e instanceof Anthropic.BadRequestError && /credit|billing/i.test(e.message))
-    return 'Your Anthropic account is out of credit. Add credit in the Claude Console.'
+    return 'Your Anthropic account is out of credit. Add credit in the Claude Console, or switch to free local AI.'
   if (e instanceof Anthropic.APIError)
     return `Claude returned an error (${e.status ?? 'unknown'}). Try again.`
   return e instanceof Error ? e.message : 'Something went wrong.'

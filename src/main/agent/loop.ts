@@ -1,29 +1,15 @@
-import type Anthropic from '@anthropic-ai/sdk'
-import type { AgentEvent, ModelId } from '../../shared/types'
-import { toApiTools } from './tools'
+import { z } from 'zod'
+import type { AgentEvent } from '../../shared/types'
 import type { NovaTool, ToolContext } from './tools/types'
+import type { Msg, Part, Provider, ToolSpec } from './types'
 
-type MessageParam = Anthropic.MessageParam
-type ContentBlock = Anthropic.ContentBlock
-
-/** The small part of the Anthropic client the loop uses, so tests can pass a fake. */
-export interface StreamingClient {
-  messages: {
-    stream(
-      params: Anthropic.MessageCreateParamsNonStreaming,
-      options?: { signal?: AbortSignal }
-    ): {
-      on(event: 'text', listener: (delta: string) => void): unknown
-      finalMessage(): Promise<Anthropic.Message>
-    }
-  }
-}
+export const MAX_STEPS = 8
+const KEEP_TURNS = 12
 
 export interface RunOptions {
-  client: StreamingClient
-  model: ModelId
+  provider: Provider
   system: string
-  history: MessageParam[]
+  history: Msg[]
   userText: string
   tools: NovaTool[]
   webSearch: boolean
@@ -33,99 +19,103 @@ export interface RunOptions {
   confirm(id: string, title: string, detail: string): Promise<boolean>
   signal?: AbortSignal
   maxSteps?: number
+  /** Set for specialist agents: their words go back to the main agent, not to the screen. */
+  agent?: string
 }
 
-export const MAX_STEPS = 8
-const KEEP_TURNS = 12
+export interface TurnResult {
+  history: Msg[]
+  /** Everything the agent said this turn (used as a specialist's report). */
+  text: string
+}
+
+/** Converts Nova's tools to the neutral format. The Zod schema is the single source of truth. */
+export function toolSpecs(tools: NovaTool[]): ToolSpec[] {
+  return tools.map((t) => {
+    const schema = { ...(z.toJSONSchema(t.schema, { io: 'input' }) as Record<string, unknown>) }
+    delete schema.$schema
+    return { name: t.name, description: t.description, schema: { ...schema, type: 'object' } }
+  })
+}
 
 /**
- * One user turn: call Claude, run any tools it asks for, feed the results back, repeat until it answers.
- * Returns the new history. Thinking blocks are kept while tools run (the API needs them) and dropped
- * once the turn is finished, so older turns never carry thinking blocks into later requests.
+ * One turn of one agent: call the model, run the tools it asks for, feed the results back,
+ * and repeat until it answers or hits the step limit. Works the same with any provider.
  */
-export async function runTurn(o: RunOptions): Promise<MessageParam[]> {
-  const turn: MessageParam[] = [{ role: 'user', content: o.userText }]
-  const tools = [
-    ...toApiTools(o.tools),
-    ...(o.webSearch
-      ? [{ type: 'web_search_20250305' as const, name: 'web_search' as const, max_uses: 3 }]
-      : [])
-  ]
-  o.emit({ type: 'start', turnId: o.turnId })
+export async function runTurn(o: RunOptions): Promise<TurnResult> {
+  const turn: Msg[] = [{ role: 'user', parts: [{ type: 'text', text: o.userText }] }]
+  const specs = toolSpecs(o.tools)
+  const main = !o.agent
+  if (main) o.emit({ type: 'start', turnId: o.turnId })
+  let said = ''
   const limit = o.maxSteps ?? MAX_STEPS
 
   for (let step = 0; step < limit; step++) {
-    const stream = o.client.messages.stream(
-      {
-        model: o.model,
-        max_tokens: 2048,
-        system: o.system,
-        tools: tools as Anthropic.ToolUnion[],
-        output_config: { effort: 'low' },
-        messages: [...o.history, ...turn]
-      } as Anthropic.MessageCreateParamsNonStreaming,
-      { signal: o.signal }
-    )
-    stream.on('text', (delta) => o.emit({ type: 'text', turnId: o.turnId, delta }))
-    const msg = await stream.finalMessage()
-    turn.push({ role: 'assistant', content: msg.content as ContentBlock[] })
-    emitSources(msg.content, o)
+    const reply = await o.provider.chat({
+      system: o.system,
+      messages: [...o.history, ...turn],
+      tools: specs,
+      webSearch: o.webSearch && o.provider.canSearchWeb,
+      signal: o.signal,
+      onText: (delta) => {
+        said += delta
+        if (main) o.emit({ type: 'text', turnId: o.turnId, delta })
+      }
+    })
+    turn.push({ role: 'assistant', parts: reply.parts, raw: reply.raw })
+    for (const s of reply.sources ?? [])
+      o.emit({ type: 'source', turnId: o.turnId, url: s.url, title: s.title })
 
-    if (msg.stop_reason === 'pause_turn') {
-      // A long web search paused; ask Claude to carry on (the API does not accept a final assistant turn).
-      turn.push({ role: 'user', content: 'Continue.' })
+    if (reply.stop === 'pause') {
+      // A long web search paused; ask the model to carry on (a final assistant turn is not accepted).
+      turn.push({ role: 'user', parts: [{ type: 'text', text: 'Continue.' }] })
       continue
     }
-    const calls = msg.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
-    if (msg.stop_reason !== 'tool_use' || !calls.length) {
-      o.emit({ type: 'done', turnId: o.turnId })
-      return trim([...o.history, ...withoutThinking(turn)])
-    }
+    const calls = reply.parts.filter(
+      (p): p is Extract<Part, { type: 'tool_call' }> => p.type === 'tool_call'
+    )
+    if (reply.stop !== 'tool_use' || !calls.length) return finish(o, turn, said)
 
-    const results: Anthropic.ToolResultBlockParam[] = []
+    const results: Part[] = []
     for (const call of calls) results.push(await runTool(call, o))
-    turn.push({ role: 'user', content: results })
+    turn.push({ role: 'user', parts: results })
   }
 
-  // Too many steps: stop cleanly with a short spoken note.
   const note = "I've stopped there because that took too many steps. Try asking in a simpler way."
-  o.emit({ type: 'text', turnId: o.turnId, delta: note })
-  o.emit({ type: 'done', turnId: o.turnId })
-  const last = turn.at(-1)
-  if (last?.role === 'user') turn.push({ role: 'assistant', content: note })
-  return trim([...o.history, ...withoutThinking(turn)])
+  said += note
+  if (main) o.emit({ type: 'text', turnId: o.turnId, delta: note })
+  turn.push({ role: 'assistant', parts: [{ type: 'text', text: note }] })
+  return finish(o, turn, said)
 }
 
-async function runTool(
-  call: Anthropic.ToolUseBlock,
-  o: RunOptions
-): Promise<Anthropic.ToolResultBlockParam> {
+function finish(o: RunOptions, turn: Msg[], said: string): TurnResult {
+  if (!o.agent) o.emit({ type: 'done', turnId: o.turnId })
+  return { history: trim([...o.history, ...o.provider.finishTurn(turn)]), text: said.trim() }
+}
+
+async function runTool(call: Extract<Part, { type: 'tool_call' }>, o: RunOptions): Promise<Part> {
   const tool = o.tools.find((t) => t.name === call.name)
-  const base = { type: 'tool_result' as const, tool_use_id: call.id }
-  if (!tool) return { ...base, content: `Unknown tool: ${call.name}`, is_error: true }
-  o.emit({
-    type: 'tool',
-    turnId: o.turnId,
-    id: call.id,
-    name: tool.name,
-    label: tool.label,
-    status: 'running'
-  })
-  const parsed = tool.schema.safeParse(call.input)
-  if (!parsed.success) {
+  const base = { type: 'tool_result' as const, id: call.id, name: call.name }
+  if (!tool) return { ...base, content: `Unknown tool: ${call.name}`, isError: true }
+  const step = (status: 'running' | 'done' | 'error' | 'declined', summary?: string): void =>
     o.emit({
       type: 'tool',
       turnId: o.turnId,
       id: call.id,
       name: tool.name,
       label: tool.label,
-      status: 'error',
-      summary: 'Bad input'
+      status,
+      summary,
+      agent: o.agent
     })
+  step('running')
+  const parsed = tool.schema.safeParse(call.input ?? {})
+  if (!parsed.success) {
+    step('error', 'Bad input')
     return {
       ...base,
       content: `Invalid input: ${parsed.error.issues.map((i) => i.message).join('; ')}`,
-      is_error: true
+      isError: true
     }
   }
   let declined = false
@@ -138,65 +128,23 @@ async function runTool(
         return ok
       }
     })
-    const status = declined ? 'declined' : res.isError ? 'error' : 'done'
-    o.emit({
-      type: 'tool',
-      turnId: o.turnId,
-      id: call.id,
-      name: tool.name,
-      label: tool.label,
-      status,
-      summary: res.summary
-    })
-    return { ...base, content: res.content, is_error: res.isError || undefined }
+    step(declined ? 'declined' : res.isError ? 'error' : 'done', res.summary)
+    return { ...base, content: res.content, isError: res.isError || undefined }
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e)
-    o.emit({
-      type: 'tool',
-      turnId: o.turnId,
-      id: call.id,
-      name: tool.name,
-      label: tool.label,
-      status: 'error',
-      summary: 'Failed'
-    })
-    return { ...base, content: `The tool failed: ${message}`, is_error: true }
+    if (o.signal?.aborted) throw e
+    step('error', 'Failed')
+    return {
+      ...base,
+      content: `The tool failed: ${e instanceof Error ? e.message : String(e)}`,
+      isError: true
+    }
   }
 }
 
-function emitSources(content: ContentBlock[], o: RunOptions): void {
-  for (const b of content) {
-    if (b.type !== 'web_search_tool_result' || !Array.isArray(b.content)) continue
-    for (const r of b.content.slice(0, 3))
-      if (r.type === 'web_search_result')
-        o.emit({ type: 'source', turnId: o.turnId, url: r.url, title: r.title })
-  }
-}
-
-/** Drops thinking blocks from a finished turn. Everything else (including web search results) stays unchanged. */
-export function withoutThinking(turn: MessageParam[]): MessageParam[] {
-  return turn
-    .map((m) =>
-      m.role === 'assistant' && Array.isArray(m.content)
-        ? {
-            ...m,
-            content: (m.content as ContentBlock[]).filter(
-              (b) => b.type !== 'thinking' && b.type !== 'redacted_thinking'
-            ) as Anthropic.ContentBlockParam[]
-          }
-        : m
-    )
-    .map((m) =>
-      m.role === 'assistant' && Array.isArray(m.content) && m.content.length === 0
-        ? { ...m, content: '(no reply)' }
-        : m
-    )
-}
-
-/** Keeps the last KEEP_TURNS user turns. Always cuts before a user's typed message, never between a tool call and its result. */
-export function trim(history: MessageParam[], keep = KEEP_TURNS): MessageParam[] {
+/** Keeps the last KEEP_TURNS user turns. Always cuts before a typed message, never between a tool call and its result. */
+export function trim(history: Msg[], keep = KEEP_TURNS): Msg[] {
   const starts = history
-    .map((m, i) => (m.role === 'user' && typeof m.content === 'string' ? i : -1))
+    .map((m, i) => (m.role === 'user' && m.parts.every((p) => p.type === 'text') ? i : -1))
     .filter((i) => i >= 0)
   if (starts.length <= keep) return history
   return history.slice(starts[starts.length - keep])

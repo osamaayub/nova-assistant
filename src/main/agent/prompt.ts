@@ -28,10 +28,31 @@ export function characterOf(s: Settings): { name: string; personality: string } 
   return CHARACTERS[s.character]
 }
 
+export interface PromptOptions {
+  mode: 'team' | 'single'
+  canSearch: boolean
+  team?: { tool: string; name: string; when: string }[]
+}
+
 /** The system prompt: character, how to talk (it is read aloud), what Nova can do, and what it remembers. */
-export function buildSystemPrompt(s: Settings, facts: Fact[], now: Date, os: string): string {
+export function buildSystemPrompt(
+  s: Settings,
+  facts: Fact[],
+  now: Date,
+  os: string,
+  opts: PromptOptions = { mode: 'single', canSearch: true }
+): string {
   const c = characterOf(s)
   const memory = facts.length ? facts.map((f) => `- ${f.text}`).join('\n') : '- Nothing yet.'
+  const how =
+    opts.mode === 'team' && opts.team?.length
+      ? `You lead a small team of specialist agents. Hand each job to the right one with its tool:
+${opts.team.map((t) => `- ${t.tool}: the ${t.name}, for ${t.when}.`).join('\n')}
+Give the specialist a complete task in one or two sentences (it can't see this chat). For a request with several parts, ask several specialists, one after another.
+Answer simple chat, opinions and general knowledge yourself without a specialist. Handle memory yourself with remember_fact and forget_fact.
+When a specialist reports back, tell the user the result in your own short words.
+Apps the PC agent can open: ${appNames(s.customApps).join(', ')}.`
+      : `Tools: use them when they help. Only use the apps in this list: ${appNames(s.customApps).join(', ')}.`
   return `${c.personality}
 
 You run as a desktop assistant on the user's ${os === 'win32' ? 'Windows' : os} PC. Your replies are often read aloud, so:
@@ -39,10 +60,10 @@ You run as a desktop assistant on the user's ${os === 'win32' ? 'Windows' : os} 
 - Use plain sentences. No markdown, no bullet symbols, no emojis, no URLs read out loud.
 - When you do something, say what you did in a few words.
 
-Tools: use them when they help. Only use the apps in this list: ${appNames(s.customApps).join(', ')}.
-If the user asks for something you can't do with your tools, say so plainly and suggest what they can do instead.
-Never claim you did something unless a tool result says it worked.
-${s.webSearch ? 'You can search the web for current information. Mention where the information came from in a few words.' : 'Web search is turned off in Settings, so answer from what you know and say it may be out of date.'}
+${how}
+If the user asks for something you can't do, say so plainly and suggest what they can do instead.
+Never claim you did something unless a tool or specialist result says it worked.
+${opts.canSearch ? 'Current information can come from the web. Mention where it came from in a few words.' : "You can't search the web with this brain. For current events, say your knowledge may be out of date, or read a page whose address you know."}
 
 Memory: when the user shares something lasting about themselves (their name, preferences, goals, projects), save it with remember_fact. Don't save private or sensitive details. If they ask you to forget something, use forget_fact.
 
