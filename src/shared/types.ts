@@ -3,6 +3,8 @@
 export type CharacterId = 'nova' | 'mentor' | 'friend' | 'custom'
 export type VoiceEngine = 'system' | 'kokoro'
 export type ModelId = 'claude-haiku-5-5' | 'claude-sonnet-5-5' | 'claude-opus-5-5'
+export type ProviderId = 'claude' | 'ollama'
+export type AgentMode = 'team' | 'single'
 
 export interface CustomApp {
   name: string
@@ -10,7 +12,11 @@ export interface CustomApp {
 }
 
 export interface Settings {
+  provider: ProviderId
   model: ModelId
+  ollamaUrl: string
+  ollamaModel: string
+  agentMode: AgentMode
   character: CharacterId
   customName: string
   customPersonality: string
@@ -47,6 +53,8 @@ export type AgentEvent =
       label: string
       status: 'running' | 'done' | 'error' | 'declined'
       summary?: string
+      /** Which specialist ran it ("PC agent"), or empty for the main agent. */
+      agent?: string
     }
   | { type: 'confirm'; turnId: string; id: string; title: string; detail: string }
   | { type: 'source'; turnId: string; url: string; title: string }
@@ -66,5 +74,6 @@ export interface NovaApi {
   clearApiKey(): Promise<PublicSettings>
   listFacts(): Promise<Fact[]>
   deleteFact(id: number): Promise<Fact[]>
+  checkOllama(url: string): Promise<{ ok: true; models: string[] } | { ok: false; error: string }>
   platform: string
 }
