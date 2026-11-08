@@ -490,3 +490,26 @@ textarea {
     transition-duration: 0.01ms !important;
   }
 }
+
+.steps {
+  margin: 4px 0 0;
+  padding-left: 20px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.steps li {
+  margin: 2px 0;
+}
+code {
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 1px 5px;
+  color: var(--text);
+}
+.step .agent {
+  color: var(--accent);
+  font-weight: 600;
+}

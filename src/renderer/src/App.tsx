@@ -15,6 +15,10 @@ const COLORS: Record<CharacterId, [string, string]> = {
   friend: ['#86efac', '#0ea5e9'],
   custom: ['#f5d0fe', '#a855f7']
 }
+/** Claude needs a key; the free local brain (Ollama) does not. */
+const needsKey = (s: PublicSettings | null): boolean =>
+  !!s && s.provider === 'claude' && !s.hasApiKey
+
 const NAMES: Record<Exclude<CharacterId, 'custom'>, string> = {
   nova: 'Nova',
   mentor: 'Sage',
@@ -83,7 +87,7 @@ export default function App(): React.JSX.Element {
     (raw: string) => {
       const msg = raw.trim()
       if (!msg || !settingsRef.current) return
-      if (!settingsRef.current.hasApiKey) return setPanel(true)
+      if (needsKey(settingsRef.current)) return setPanel(true)
       speaker.stop()
       dispatch({ type: 'user', text: msg })
       void nova.send(msg)
@@ -159,7 +163,8 @@ export default function App(): React.JSX.Element {
 
   const name =
     settings.character === 'custom' ? settings.customName || 'Atlas' : NAMES[settings.character]
-  const orbState: OrbState = !settings.hasApiKey
+  const blocked = needsKey(settings)
+  const orbState: OrbState = blocked
     ? 'offline'
     : listening
       ? 'listening'
@@ -168,8 +173,8 @@ export default function App(): React.JSX.Element {
         : state.busy || transcribing
           ? 'thinking'
           : 'idle'
-  const status = !settings.hasApiKey
-    ? 'Add your Claude API key to start'
+  const status = blocked
+    ? 'Pick a brain to start'
     : listening
       ? 'Listening…'
       : transcribing
@@ -215,18 +220,26 @@ export default function App(): React.JSX.Element {
 
       <div className={`stage ${state.items.length ? 'compact' : ''}`}>
         <Orb state={orbState} level={level} colors={COLORS[settings.character]} />
-        {!settings.hasApiKey && (
+        {blocked && (
           <div className="onboard">
             <p>
-              Nova uses Claude as its brain. Paste your API key once and it stays encrypted on this
-              PC.
+              Claude is selected but no key is saved. Use the free local brain instead, or add your
+              key.
             </p>
-            <button className="btn primary" onClick={() => setPanel(true)}>
-              Add API key
-            </button>
+            <div className="row" style={{ justifyContent: 'center' }}>
+              <button
+                className="btn primary"
+                onClick={async () => setSettings(await nova.saveSettings({ provider: 'ollama' }))}
+              >
+                Use free local AI
+              </button>
+              <button className="btn" onClick={() => setPanel(true)}>
+                Add Claude key
+              </button>
+            </div>
           </div>
         )}
-        {settings.hasApiKey && !state.items.length && (
+        {!blocked && !state.items.length && (
           <div className="suggestions">
             {[
               'What can you do?',
@@ -278,7 +291,7 @@ export default function App(): React.JSX.Element {
             listener.cancel()
             setListening(false)
           }}
-          disabled={!settings.hasApiKey || transcribing}
+          disabled={blocked || transcribing}
         >
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
             <path
