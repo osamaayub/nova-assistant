@@ -2,9 +2,11 @@
 
 # Nova
 
-### A voice AI assistant for your Windows PC
+### A voice AI assistant for your Windows PC, run by a team of agents
 
-Talk to it, and it answers out loud. It opens apps, finds music, checks your PC, tidies Downloads, sets reminders, searches the web and remembers what matters to you.
+Talk to it, and it answers out loud. It opens apps, finds music, checks your PC, tidies Downloads, sets reminders, researches and remembers what matters to you.
+
+**Runs free on your own PC with Ollama (no API key), or on Claude.**
 
 [![CI](https://github.com/osamaayub/nova-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/osamaayub/nova-assistant/actions/workflows/ci.yml)
 [![Download for Windows](https://img.shields.io/badge/Download-Windows_installer-0078D4?logo=windows&logoColor=white)](https://github.com/osamaayub/nova-assistant/releases/latest)
@@ -13,9 +15,9 @@ Talk to it, and it answers out loud. It opens apps, finds music, checks your PC,
 ![Claude](https://img.shields.io/badge/Claude-tool_use-191919?logo=anthropic&logoColor=white)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-<img src="docs/home.jpg" width="31%" alt="Nova's home screen with the particle orb and suggestions" />
+<img src="docs/team.jpg" width="31%" alt="Nova handing a music request to its PC agent" />
+<img src="docs/brain.jpg" width="31%" alt="Settings: free local AI with Ollama, or Claude, and the team-of-agents switch" />
 <img src="docs/confirm.jpg" width="31%" alt="Nova asking for permission before moving files" />
-<img src="docs/characters.jpg" width="31%" alt="The Sage character with an amber orb" />
 
 </div>
 
@@ -32,6 +34,33 @@ Talk to it, and it answers out loud. It opens apps, finds music, checks your PC,
 | "Remember that I prefer short answers" | Saved on your PC and used in every future chat (see and delete it in Settings) |
 
 Pick a character (Nova, Sage the mentor, Max the friend, or write your own), and the orb changes colour and personality.
+
+## Two brains, your choice
+
+| | Free local AI (default) | Claude |
+| --- | --- | --- |
+| Key needed | **No** | Your own Claude API key |
+| Cost | Free | Pay per use |
+| Runs | On your PC with [Ollama](https://ollama.com), works offline | Anthropic's servers |
+| Web search | No (it can read a page whose address it knows) | Yes, with sources |
+| Best model | `qwen3:8b` (about 5 GB, needs 8 GB+ RAM) | Sonnet 5.5 |
+
+Switch any time in **Settings → Brain**.
+
+## A team of agents
+
+Like Claude Code's subagents, Nova splits work between specialists. The main agent talks to you and hands each job to the right one:
+
+```mermaid
+flowchart LR
+    U["You"] --> N["Nova (main agent)<br/>talks, decides, remembers"]
+    N -- "ask_pc_agent" --> PC["PC agent<br/>apps · websites · music · timers · PC health"]
+    N -- "ask_files_agent" --> F["Files agent<br/>your folders · tidy Downloads"]
+    N -- "ask_research_agent" --> R["Research agent<br/>web search · read pages"]
+    PC & F & R -- "short report" --> N
+```
+
+Each specialist sees only its task and its own tools, has a 6-step limit, and reports back in a sentence or two. The window shows every step under the agent that ran it. Turn **Team of agents** off in Settings for quicker one-step commands.
 
 ## How it works
 
@@ -62,9 +91,15 @@ flowchart LR
 
 Get the latest **Windows installer** from [Releases](https://github.com/osamaayub/nova-assistant/releases/latest), run it, and add your Claude API key in Settings. The installer isn't code-signed yet, so Windows may say "Windows protected your PC": click **More info**, then **Run anyway**.
 
+## Free setup (no key)
+
+1. Install [Ollama](https://ollama.com) and open it.
+2. In a terminal: `ollama pull qwen3:8b`
+3. Install Nova, open **Settings → Brain**, keep **Free local AI**, and click **Check connection**.
+
 ## Run it from the code
 
-You need [Node.js 22+](https://nodejs.org) and a [Claude API key](https://console.anthropic.com) (you pay Anthropic directly for what you use).
+You need [Node.js 22+](https://nodejs.org), plus Ollama (free) or a [Claude API key](https://console.anthropic.com).
 
 ```bash
 git clone https://github.com/osamaayub/nova-assistant.git
@@ -73,7 +108,7 @@ npm install
 npm run dev
 ```
 
-Then click **Add API key**, paste your key, and hold **Space** to talk. **Alt+Space** shows or hides Nova from anywhere.
+Then hold **Space** to talk. **Alt+Space** shows or hides Nova from anywhere.
 
 The first time you talk, Nova downloads the Whisper speech model (about 80 MB). If you pick the natural Kokoro voice, that downloads once too (about 90 MB). Both are cached after that.
 
@@ -81,7 +116,7 @@ The first time you talk, Nova downloads the Whisper speech model (about 80 MB). 
 
 ## Costs
 
-Every message is a Claude API call. With **Sonnet 5.5** and short spoken replies, a typical command costs a fraction of a cent. **Haiku 5.5** is cheaper and faster, and **Opus 5.5** is smarter but slower. Web search adds $10 per 1,000 searches. You can turn it off in Settings.
+With Ollama, Nova is completely free. With Claude, every message is an API call, and team mode makes a few calls per request. With **Sonnet 5.5** and short spoken replies, a typical command costs a fraction of a cent. **Haiku 5.5** is cheaper and faster, and **Opus 5.5** is smarter but slower. Web search adds $10 per 1,000 searches. You can turn it off in Settings.
 
 ## Project structure
 
@@ -89,9 +124,12 @@ Every message is a Claude API call. With **Sonnet 5.5** and short spoken replies
 src/
 ├── main/                       # Node side: the agent and everything that touches your PC
 │   ├── agent/
-│   │   ├── loop.ts             # Claude tool-use loop: stream, run tools, step limit, history
+│   │   ├── loop.ts             # The agent loop for any brain: stream, run tools, step limit, history
+│   │   ├── team.ts             # The team: PC, Files and Research specialists and their hand-over tools
+│   │   ├── providers/          # claude.ts (tool use + web search), ollama.ts (free, local)
+│   │   ├── types.ts            # Nova's own message format and the Provider interface
 │   │   ├── prompt.ts           # Characters and the system prompt
-│   │   ├── service.ts          # One conversation: stop, new chat, "Allow?" questions, friendly errors
+│   │   ├── service.ts          # One conversation: picks the brain, runs the team, "Allow?" questions
 │   │   └── tools/              # apps, web, system, files, memory (each with a Zod schema)
 │   ├── memory/store.ts         # Facts about you in SQLite (sql.js, no native install)
 │   ├── settings/               # Settings file + encrypted API key
@@ -110,16 +148,16 @@ test/                           # Agent loop, tools, memory, settings, prompt (V
 ## Development
 
 ```bash
-npm test            # 23 tests: agent loop, tool safety, memory, settings
+npm test            # 36 tests: agent loop, both brains, the team, tool safety, memory
 npm run typecheck   # TypeScript (main and window)
 npm run build:win   # Windows installer
 ```
 
-## Ideas to build next
+## Built by a team of agents, too
 
-1. A wake word ("Hey Nova") with openWakeWord.
-2. Calendar and email tools through MCP servers, with "Allow" on every send.
-3. Move the agent into a FastAPI + LangGraph service so a web app can use the same brain.
+Like JS Mastery's Askwell, this repo is set up for a team of AI coding agents: [`CLAUDE.md`](CLAUDE.md) holds the team rules, [`docs/project.md`](docs/project.md) says what to build and [`docs/plan.md`](docs/plan.md) gives the phases, each split into two parallel lanes.
+
+Next on the plan: a "Hey Nova" wake word, MCP tools for calendar and email (with Allow on every send), and a shared FastAPI + LangGraph brain service.
 
 ## Author
 
