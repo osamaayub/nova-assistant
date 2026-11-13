@@ -111,6 +111,7 @@ export function ollamaProvider(
           )
         throw new Error(`Ollama error ${res.status}: ${body.slice(0, 200)}`)
       }
+      const toolNames = req.tools.map((t) => t.name)
       let text = ''
       let shown = ''
       const calls: Part[] = []
@@ -130,7 +131,11 @@ export function ollamaProvider(
           text += m.content
           // Only stream what is outside <think> blocks.
           const visible = stripThinking(text)
-          if (visible.length > shown.length && !/<think>(?![\s\S]*<\/think>)/.test(text)) {
+          if (
+            visible.length > shown.length &&
+            !/<think>(?![\s\S]*<\/think>)/.test(text) &&
+            !maybeTextCall(visible, toolNames)
+          ) {
             req.onText?.(visible.slice(shown.length))
             shown = visible
           }
@@ -160,11 +165,61 @@ export function ollamaProvider(
       } else buffer = await res.text()
       buffer.split('\n').forEach(handle)
       const final = stripThinking(text).trim()
+      const textCalls = calls.length ? null : parseTextToolCalls(final, toolNames)
+      if (textCalls) {
+        textCalls.forEach((c, i) =>
+          calls.push({
+            type: 'tool_call',
+            id: `call_${i}_${Date.now().toString(36)}`,
+            name: c.name,
+            input: c.input
+          })
+        )
+        return { parts: calls, stop: 'tool_use' }
+      }
+      // Text held back because it looked like a call, but was not one: show it now.
+      if (final.length > shown.trim().length && final.startsWith(shown.trim())) {
+        req.onText?.(final.slice(shown.length))
+      }
       const parts: Part[] = [...(final ? [{ type: 'text' as const, text: final }] : []), ...calls]
       return { parts, stop: calls.length ? 'tool_use' : 'end' }
     },
     finishTurn: (msgs) => msgs
   }
+}
+
+/**
+ * Some models (Gemma and GLM style) write a tool call as plain text instead of using Ollama's
+ * tool_calls field, e.g. `ask_pc_agent{task:<|"|>Play lofi<|"|>}`. This reads that text, but only
+ * for tools Nova actually offered and only when the whole reply is calls. Returns null otherwise.
+ */
+export function parseTextToolCalls(
+  text: string,
+  toolNames: string[]
+): { name: string; input: Record<string, unknown> }[] | null {
+  const names = toolNames.join('|')
+  if (!names) return null
+  const callRe = new RegExp(`(?:call:)?(${names})\\s*\\{([^{}]*)\\}`, 'g')
+  const out: { name: string; input: Record<string, unknown> }[] = []
+  let rest = text
+  for (const m of text.matchAll(callRe)) {
+    const input: Record<string, unknown> = {}
+    const argRe = /(\w+)\s*:\s*(?:<\|"\|>([\s\S]*?)<\|"\|>|"([^"]*)"|([^,\s}]+))/g
+    for (const a of m[2].matchAll(argRe)) {
+      const raw = a[2] ?? a[3] ?? a[4]
+      input[a[1]] = a[4] !== undefined && /^-?\d+(\.\d+)?$/.test(a[4]) ? Number(a[4]) : raw
+    }
+    out.push({ name: m[1], input })
+    rest = rest.replace(m[0], '')
+  }
+  return out.length && !rest.trim() ? out : null
+}
+
+/** True while streamed text could still turn out to be a text-style tool call (hold it back). */
+export function maybeTextCall(text: string, toolNames: string[]): boolean {
+  const t = text.trimStart().replace(/^call:/, '')
+  if (!t) return false
+  return toolNames.some((n) => n.startsWith(t) || (t.startsWith(n) && /^\s*(\{|$)/.test(t.slice(n.length))))
 }
 
 function safeJson(s: string): unknown {

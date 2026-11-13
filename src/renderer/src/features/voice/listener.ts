@@ -22,13 +22,35 @@ export class Listener {
     this.onLevel(level)
   }
 
+  private releaseTimer: ReturnType<typeof setTimeout> | null = null
+  /** Set while the wake word is on: it needs the speech model ready at all times. */
+  private keepLoaded = false
+
+  setKeepLoaded(keep: boolean): void {
+    this.keepLoaded = keep
+  }
+
   private client(): WorkerClient<{ text: string }> {
     this.whisper ??= new WorkerClient<{ text: string }>(
       new Worker(new URL('./whisper.worker.ts', import.meta.url), { type: 'module' }),
       'text',
       (p) => this.onProgress(p >= 100 ? null : p)
     )
+    // The speech model uses a few hundred MB. Free it after 3 quiet minutes; it reloads on demand.
+    if (this.releaseTimer) clearTimeout(this.releaseTimer)
+    this.releaseTimer = setTimeout(() => this.release(), 180_000)
     return this.whisper
+  }
+
+  private release(): void {
+    this.releaseTimer = null
+    if (!this.whisper) return
+    if (this.keepLoaded || this.whisper.busy || this.recorder) {
+      this.releaseTimer = setTimeout(() => this.release(), 30_000)
+      return
+    }
+    this.whisper.terminate()
+    this.whisper = null
   }
 
   /** Downloads and loads Whisper in the background, so the first voice command is quick. */

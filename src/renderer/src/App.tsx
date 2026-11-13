@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentEvent, CharacterId, PublicSettings } from '../../shared/types'
 import { Transcript } from './features/chat/Transcript'
 import { useAgentState } from './features/chat/useAgent'
+import { CrewBoard } from './features/crew/CrewBoard'
 import { Orb, type OrbState } from './features/orb/Orb'
 import { Monitor } from './features/monitor/Monitor'
 import { SettingsPanel } from './features/settings/SettingsPanel'
@@ -13,6 +14,7 @@ import { SentenceSplitter } from './lib/sentences'
 
 const COLORS: Record<CharacterId, [string, string]> = {
   nova: ['#7dd3fc', '#6366f1'],
+  jarvis: ['#fca5a5', '#f59e0b'],
   mentor: ['#fde68a', '#f97316'],
   friend: ['#86efac', '#0ea5e9'],
   custom: ['#f5d0fe', '#a855f7']
@@ -23,6 +25,7 @@ const needsKey = (s: PublicSettings | null): boolean =>
 
 const NAMES: Record<Exclude<CharacterId, 'custom'>, string> = {
   nova: 'Nova',
+  jarvis: 'Jarvis',
   mentor: 'Sage',
   friend: 'Max'
 }
@@ -30,6 +33,7 @@ const NAMES: Record<Exclude<CharacterId, 'custom'>, string> = {
 export default function App(): React.JSX.Element {
   const [settings, setSettings] = useState<PublicSettings | null>(null)
   const [panel, setPanel] = useState(false)
+  const [section, setSection] = useState<string | undefined>()
   const [monitor, setMonitor] = useState(false)
   const [text, setText] = useState('')
   const [listening, setListening] = useState(false)
@@ -216,17 +220,21 @@ export default function App(): React.JSX.Element {
     }
   }, [startTalk, endTalk, panel, speaker])
 
-  // Load Whisper in the background after the window opens.
+  // Load Whisper early only when the wake word needs it. Otherwise it loads on first use.
   useEffect(() => {
+    listener.setKeepLoaded(!!settings?.wakeWord)
+    if (!settings?.wakeWord) return
     const t = setTimeout(() => listener.warm(), 1500)
     return () => clearTimeout(t)
-  }, [listener])
+  }, [listener, settings?.wakeWord])
 
   if (!settings) return <div className="app" />
 
   const name =
     settings.character === 'custom' ? settings.customName || 'Atlas' : NAMES[settings.character]
   const blocked = needsKey(settings)
+  const lastItem = state.items.at(-1)
+  const lastSteps = lastItem?.kind === 'assistant' ? lastItem.steps : []
   const orbState: OrbState = blocked
     ? 'offline'
     : listening
@@ -280,7 +288,10 @@ export default function App(): React.JSX.Element {
           </button>
           <button
             className="icon-btn"
-            onClick={() => setPanel(true)}
+            onClick={() => {
+              setSection(undefined)
+              setPanel(true)
+            }}
             aria-label="Settings"
             title="Settings"
           >
@@ -291,6 +302,27 @@ export default function App(): React.JSX.Element {
 
       <div className={`stage ${state.items.length ? 'compact' : ''}`}>
         <Orb state={orbState} level={level} colors={COLORS[settings.character]} />
+        <nav className="circuits" aria-label="Quick settings">
+          {(
+            [
+              ['Memory', 'memory'],
+              ['Skills', 'skills'],
+              ['Character', 'character'],
+              ['Settings', 'brain']
+            ] as const
+          ).map(([label, id]) => (
+            <button
+              key={id}
+              className="chip circuit"
+              onClick={() => {
+                setSection(id)
+                setPanel(true)
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
         {blocked && (
           <div className="onboard">
             <p>
@@ -325,6 +357,8 @@ export default function App(): React.JSX.Element {
           </div>
         )}
       </div>
+
+      <CrewBoard steps={lastSteps} busy={state.busy} lead={name} />
 
       <Transcript
         items={state.items}
@@ -398,7 +432,15 @@ export default function App(): React.JSX.Element {
 
       {monitor && <Monitor onClose={() => setMonitor(false)} />}
       {panel && (
-        <SettingsPanel settings={settings} onChange={setSettings} onClose={() => setPanel(false)} />
+        <SettingsPanel
+          settings={settings}
+          section={section}
+          onChange={setSettings}
+          onClose={() => {
+            setPanel(false)
+            setSection(undefined)
+          }}
+        />
       )}
     </div>
   )

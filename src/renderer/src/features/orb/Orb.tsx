@@ -182,6 +182,13 @@ export function Orb({
     let raf = 0
     let last = performance.now()
     const frame = (now: number): void => {
+      raf = requestAnimationFrame(frame)
+      // Nothing to draw while the window is hidden. When idle, 30 fps is plenty.
+      if (document.hidden) {
+        last = now
+        return
+      }
+      if (live.current.state === 'idle' && now - last < 33) return
       const dt = Math.min(0.05, (now - last) / 1000)
       last = now
       const { state: s, level: l, colors: c } = live.current
@@ -201,7 +208,6 @@ export function Orb({
       ;(ring.material as THREE.LineBasicMaterial).opacity = 0.14 + energy * 0.4
       ;(ring.material as THREE.LineBasicMaterial).color.lerp(new THREE.Color(c[0]), dt * 3)
       renderer.render(scene, camera)
-      raf = requestAnimationFrame(frame)
     }
     raf = requestAnimationFrame(frame)
 

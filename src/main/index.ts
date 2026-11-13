@@ -14,7 +14,9 @@ import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import trayIcon from '../../build/icon.ico?asset'
 import type { AgentEvent, Settings } from '../shared/types'
+import { characterOf } from './agent/prompt'
 import { AgentService } from './agent/service'
+import { RemoteManager } from './remote/manager'
 import { fetchHeadlines } from './news'
 import { McpManager } from './mcp/manager'
 import { MemoryStore } from './memory/store'
@@ -25,6 +27,7 @@ import { clearApiKey, getSettings, publicSettings, saveApiKey, saveSettings } fr
 let win: BrowserWindow | null = null
 let tray: Tray | null = null
 let quitting = false
+let remote: RemoteManager | null = null
 
 function createWindow(): BrowserWindow {
   const w = new BrowserWindow({
@@ -126,7 +129,11 @@ app.whenReady().then(async () => {
     require.resolve('sql.js/dist/sql-wasm.wasm')
   )
   const platform = createPlatform()
-  const emit = (e: AgentEvent): void => win?.webContents.send('agent:event', e)
+  // The phone link is created below, once the agent exists. Agent events also go to the phone.
+  const emit = (e: AgentEvent): void => {
+    win?.webContents.send('agent:event', e)
+    remote?.broadcast(e)
+  }
   platform.notify = ((original) => (title: string, body: string) => {
     original(title, body)
     emit({ type: 'notify', title, body })
@@ -136,15 +143,42 @@ app.whenReady().then(async () => {
   mcp.sync(getSettings().mcpServers)
   const agent = new AgentService(platform, memory, emit, undefined, mcp)
 
-  ipcMain.handle('agent:send', (_e, text: unknown) => agent.send(String(text ?? '')))
+  // A paired phone can do exactly what the window can: send, stop, start over, answer "Allow?".
+  remote = new RemoteManager(
+    {
+      send: (text) => {
+        const e: AgentEvent = { type: 'user', text, from: 'phone' }
+        win?.webContents.send('agent:event', e)
+        remote?.broadcast(e)
+        void agent.send(text)
+      },
+      stop: () => agent.stop(),
+      newChat: () => agent.newChat(),
+      confirm: (id, approved) => agent.confirm(id, approved)
+    },
+    () => characterOf(getSettings()).name
+  )
+  await remote.sync(getSettings().remote)
+
+  ipcMain.handle('agent:send', (_e, text: unknown) => {
+    const t = String(text ?? '')
+    remote?.broadcast({ type: 'user', text: t, from: 'window' })
+    return agent.send(t)
+  })
+  ipcMain.handle('remote:info', () => remote!.info())
+  ipcMain.handle('remote:reset', async () => {
+    await remote!.reset()
+    return remote!.info()
+  })
   ipcMain.handle('agent:stop', () => agent.stop())
   ipcMain.handle('agent:new', () => agent.newChat())
   ipcMain.handle('agent:confirm', (_e, id: unknown, ok: unknown) =>
     agent.confirm(String(id), ok === true)
   )
   ipcMain.handle('settings:get', () => publicSettings())
-  ipcMain.handle('settings:save', (_e, patch: Partial<Settings>) => {
+  ipcMain.handle('settings:save', async (_e, patch: Partial<Settings>) => {
     const next = saveSettings(patch && typeof patch === 'object' ? patch : {})
+    await remote?.sync(next.remote)
     try {
       applyAutostart(next)
     } catch {
@@ -217,6 +251,7 @@ app.whenReady().then(async () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
+  remote?.close()
   tray?.destroy()
 })
 app.on('window-all-closed', () => {

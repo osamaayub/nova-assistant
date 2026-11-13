@@ -1,6 +1,6 @@
 /** Types shared by the main process (Node) and the window (React). No runtime code here. */
 
-export type CharacterId = 'nova' | 'mentor' | 'friend' | 'custom'
+export type CharacterId = 'nova' | 'jarvis' | 'mentor' | 'friend' | 'custom'
 export type VoiceEngine = 'system' | 'kokoro'
 export type ModelId = 'claude-haiku-5-5' | 'claude-sonnet-5-5' | 'claude-opus-5-5'
 export type ProviderId = 'claude' | 'ollama' | 'flm'
@@ -39,6 +39,20 @@ export interface Settings {
   startWithWindows: boolean
   wakeWord: boolean
   mcpServers: McpServerConfig[]
+  /** Serve the phone page on the home Wi-Fi so a paired phone can talk to Nova. Off by default. */
+  remote: boolean
+}
+
+/** State of the phone link, shown in Settings. The pairing address contains the secret token. */
+export interface RemoteInfo {
+  enabled: boolean
+  /** Address to open on the phone (same Wi-Fi). Null when off or when it could not start. */
+  url: string | null
+  /** The same address as a QR code image (data URL). */
+  qr: string | null
+  /** Phones connected right now. */
+  phones: number
+  error?: string
 }
 
 /** What the window receives: settings, plus whether a key is saved (never the key itself). */
@@ -71,6 +85,7 @@ export interface McpServerStatus {
 
 /** Events the agent streams to the window while it works. */
 export type AgentEvent =
+  | { type: 'user'; text: string; from: 'window' | 'phone' }
   | { type: 'start'; turnId: string }
   | { type: 'text'; turnId: string; delta: string }
   | {
@@ -105,6 +120,9 @@ export interface NovaApi {
   checkOllama(url: string): Promise<{ ok: true; models: string[] } | { ok: false; error: string }>
   listMcp(): Promise<McpServerStatus[]>
   reconnectMcp(): Promise<McpServerStatus[]>
+  remoteInfo(): Promise<RemoteInfo>
+  /** Makes a new secret pairing code. Phones paired with the old one are disconnected. */
+  remoteReset(): Promise<RemoteInfo>
   showWindow(): Promise<void>
   headlines(): Promise<Headline[]>
   /** Opens a public web link in the real browser. */

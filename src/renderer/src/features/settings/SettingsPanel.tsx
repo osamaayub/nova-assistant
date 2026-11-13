@@ -6,9 +6,11 @@ import type {
   McpServerStatus,
   ModelId,
   PublicSettings,
+  RemoteInfo,
   Settings
 } from '../../../../shared/types'
 import { nova } from '../../lib/api'
+import { ConnectorGallery } from './ConnectorGallery'
 import { KOKORO_VOICES, systemVoices } from '../voice/speaker'
 
 const MODELS: { id: ModelId; label: string }[] = [
@@ -19,6 +21,7 @@ const MODELS: { id: ModelId; label: string }[] = [
 
 const CHARACTERS: { id: CharacterId; label: string; hint: string }[] = [
   { id: 'nova', label: 'Nova', hint: 'Calm assistant with a dry wit' },
+  { id: 'jarvis', label: 'Jarvis', hint: 'Formal, film-style AI butler' },
   { id: 'mentor', label: 'Sage', hint: 'Patient mentor' },
   { id: 'friend', label: 'Max', hint: 'Relaxed best friend' },
   { id: 'custom', label: 'Your own', hint: 'Name and personality you write' }
@@ -27,11 +30,14 @@ const CHARACTERS: { id: CharacterId; label: string; hint: string }[] = [
 export function SettingsPanel({
   settings,
   onChange,
-  onClose
+  onClose,
+  section
 }: {
   settings: PublicSettings
   onChange: (s: PublicSettings) => void
   onClose: () => void
+  /** Optional section to scroll to when the panel opens, e.g. "memory". */
+  section?: string
 }): React.JSX.Element {
   const [key, setKey] = useState('')
   const [keyMsg, setKeyMsg] = useState<{ ok: boolean; text: string } | null>(null)
@@ -42,7 +48,13 @@ export function SettingsPanel({
     {}
   )
   const [mcp, setMcp] = useState<McpServerStatus[]>([])
-  const [mcpForm, setMcpForm] = useState({ name: '', command: '', args: '' })
+
+  const [remote, setRemote] = useState<RemoteInfo | null>(null)
+
+  const toggleRemote = async (on: boolean): Promise<void> => {
+    onChange(await nova.saveSettings({ remote: on }))
+    setRemote(await nova.remoteInfo())
+  }
 
   const refreshMcp = (): void => void nova.listMcp().then(setMcp)
 
@@ -56,6 +68,9 @@ export function SettingsPanel({
     void systemVoices().then((v) => setVoices(v.filter((x) => x.lang.startsWith('en'))))
     void nova.listFacts().then(setFacts)
     void refreshMcp()
+    void nova.remoteInfo().then(setRemote)
+    if (section) document.getElementById(`sec-${section}`)?.scrollIntoView()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const save = async (patch: Partial<Settings>): Promise<void> =>
@@ -65,17 +80,6 @@ export function SettingsPanel({
     onChange(await nova.saveSettings({ mcpServers: servers }))
     // Give the manager a moment to start the new processes, then show real status.
     setTimeout(() => void refreshMcp(), 800)
-  }
-
-  const addMcp = async (): Promise<void> => {
-    const server: McpServerConfig = {
-      name: mcpForm.name.trim(),
-      command: mcpForm.command.trim(),
-      args: mcpForm.args.trim() ? mcpForm.args.trim().split(/\s+/) : [],
-      env: {}
-    }
-    await saveMcp([...settings.mcpServers, server])
-    setMcpForm({ name: '', command: '', args: '' })
   }
 
   const saveKey = async (): Promise<void> => {
@@ -103,7 +107,7 @@ export function SettingsPanel({
         </button>
       </header>
 
-      <section>
+      <section id="sec-brain">
         <h3>Brain</h3>
         <div className="chips" role="radiogroup" aria-label="Brain">
           <button
@@ -272,7 +276,7 @@ export function SettingsPanel({
         </label>
       </section>
 
-      <section>
+      <section id="sec-character">
         <h3>Character</h3>
         <div className="chips">
           {CHARACTERS.map((c) => (
@@ -404,78 +408,53 @@ export function SettingsPanel({
         </label>
       </section>
 
-      <section>
-        <h3>Connectors (MCP)</h3>
-        <p className="hint">
-          Connect external apps Nova can use, like a calendar or email server. Each server is a
-          program that speaks MCP over stdio, for example{' '}
-          <code>npx -y @modelcontextprotocol/server-filesystem C:\Users\You\Documents</code>.
-          Anything that changes data asks you first.
-        </p>
-        {settings.mcpServers.map((s) => {
-          const st = mcp.find((m) => m.name === s.name)
-          return (
-            <div key={s.name} className="list-row">
-              <span>
-                <strong>{s.name}</strong>{' '}
-                <small>
-                  {st?.state === 'connected'
-                    ? `${st.tools.length} tool${st.tools.length === 1 ? '' : 's'}`
-                    : st?.state === 'connecting'
-                      ? 'connecting…'
-                      : (st?.error ?? 'not connected')}
-                </small>
-              </span>
+      <section id="sec-phone">
+        <h3>Phone</h3>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={settings.remote}
+            onChange={(e) => void toggleRemote(e.target.checked)}
+          />
+          <span>
+            Talk to Nova from your phone on the same Wi-Fi. Anyone who scans the code below can use
+            Nova and answer its Allow questions, so keep it private.
+          </span>
+        </label>
+        {remote?.error && <p className="error">{remote.error}</p>}
+        {remote?.enabled && remote.qr && (
+          <div className="phone-pair">
+            <img src={remote.qr} width={160} height={160} alt="Scan with your phone camera" />
+            <p className="hint">
+              Scan with your phone camera. {remote.phones} phone{remote.phones === 1 ? '' : 's'}{' '}
+              connected. Windows may ask to allow Nova on private networks. Choose Allow.
+            </p>
+            <div className="row">
               <button
-                className="icon-btn"
-                aria-label={`Remove ${s.name}`}
-                onClick={() =>
-                  saveMcp(settings.mcpServers.filter((x) => x.name !== s.name))
-                }
+                className="btn"
+                onClick={() => void navigator.clipboard.writeText(remote.url ?? '').catch(() => {})}
               >
-                ✕
+                Copy address
+              </button>
+              <button className="btn" onClick={() => void nova.remoteReset().then(setRemote)}>
+                New code (disconnects phones)
               </button>
             </div>
-          )
-        })}
-        {settings.mcpServers.some((s) => mcp.find((m) => m.name === s.name)?.state === 'error') && (
-          <button className="link" onClick={async () => setMcp(await nova.reconnectMcp())}>
-            Retry failed servers
-          </button>
+          </div>
         )}
-        <div className="row">
-          <input
-            placeholder="Name (e.g. calendar)"
-            value={mcpForm.name}
-            maxLength={40}
-            onChange={(e) => setMcpForm({ ...mcpForm, name: e.target.value })}
-            aria-label="Connector name"
-          />
-          <input
-            placeholder="Command (e.g. npx)"
-            value={mcpForm.command}
-            onChange={(e) => setMcpForm({ ...mcpForm, command: e.target.value })}
-            aria-label="Connector command"
-            spellCheck={false}
-          />
-          <input
-            placeholder="Args (space separated)"
-            value={mcpForm.args}
-            onChange={(e) => setMcpForm({ ...mcpForm, args: e.target.value })}
-            aria-label="Connector arguments"
-            spellCheck={false}
-          />
-          <button
-            className="btn"
-            disabled={!mcpForm.name.trim() || !mcpForm.command.trim()}
-            onClick={addMcp}
-          >
-            Add
-          </button>
-        </div>
       </section>
 
-      <section>
+      <section id="sec-connectors">
+        <h3>Connectors</h3>
+        <ConnectorGallery
+          servers={settings.mcpServers}
+          status={mcp}
+          onSave={saveMcp}
+          onRetry={async () => setMcp(await nova.reconnectMcp())}
+        />
+      </section>
+
+      <section id="sec-skills">
         <h3>Your apps</h3>
         <p className="hint">
           Nova can open common apps already. Add others by their .exe path, for example C:\Program
@@ -524,7 +503,7 @@ export function SettingsPanel({
         </div>
       </section>
 
-      <section>
+      <section id="sec-memory">
         <h3>Memory</h3>
         <p className="hint">
           What Nova remembers about you. It is stored only on this PC and sent to Claude with each

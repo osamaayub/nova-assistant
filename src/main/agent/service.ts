@@ -5,6 +5,7 @@ import type { MemoryStore } from '../memory/store'
 import { getSettings, readApiKey } from '../settings/store'
 import { runTurn } from './loop'
 import { buildSystemPrompt } from './prompt'
+import { serialize } from './serialize'
 import { claudeProvider } from './providers/claude'
 import { flmProvider } from './providers/flm'
 import { ollamaProvider } from './providers/ollama'
@@ -60,11 +61,15 @@ export class AgentService {
         customApps: settings.customApps,
         now: () => new Date()
       }
-      const confirm = (id: string, title: string, detail: string): Promise<boolean> =>
-        new Promise<boolean>((resolve) => {
-          this.pending.set(id, resolve)
-          this.emit({ type: 'confirm', turnId, id, title, detail })
-        })
+      // Agents can work side by side, but the window shows one "Allow?" at a time. Others wait.
+      const confirm = serialize(
+        (id: string, title: string, detail: string): Promise<boolean> =>
+          new Promise<boolean>((resolve) => {
+            if (controller.signal.aborted) return resolve(false)
+            this.pending.set(id, resolve)
+            this.emit({ type: 'confirm', turnId, id, title, detail })
+          })
+      )
 
       // A specialist gets a fresh, short conversation with only its own tools.
       const delegate = async (s: Specialist, task: string): Promise<string> => {

@@ -16,6 +16,12 @@ function ago(at: number | null): string {
 export function Monitor({ onClose }: { onClose: () => void }): React.JSX.Element {
   const [items, setItems] = useState<Headline[] | null>(null)
   const [error, setError] = useState('')
+  const [now, setNow] = useState(() => new Date())
+
+  useEffect(() => {
+    const iv = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(iv)
+  }, [])
 
   const load = useCallback(async () => {
     try {
@@ -35,6 +41,9 @@ export function Monitor({ onClose }: { onClose: () => void }): React.JSX.Element
     <div className="monitor" role="dialog" aria-label="World monitor">
       <header className="panel-head">
         <h2>World Monitor</h2>
+        <span className="utc-clock" aria-label="UTC time">
+          UTC {now.toISOString().slice(11, 19)}
+        </span>
         <div className="row">
           <button className="icon-btn" onClick={() => void load()} aria-label="Refresh headlines" title="Refresh">
             ⟳

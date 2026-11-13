@@ -76,8 +76,9 @@ export async function runTurn(o: RunOptions): Promise<TurnResult> {
     )
     if (reply.stop !== 'tool_use' || !calls.length) return finish(o, turn, said)
 
-    const results: Part[] = []
-    for (const call of calls) results.push(await runTool(call, o))
+    // Calls in one reply are independent by definition (the model asks for the next ones only
+    // after reading these results), so they run side by side. Results keep the order asked.
+    const results: Part[] = await Promise.all(calls.map((call) => runTool(call, o)))
     turn.push({ role: 'user', parts: results })
   }
 
