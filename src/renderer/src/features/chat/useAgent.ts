@@ -7,6 +7,9 @@ export type Step = {
   status: 'running' | 'done' | 'error' | 'declined'
   summary?: string
   agent?: string
+  /** When the step started and (once it stops running) ended, in ms. For the timers on the board. */
+  at: number
+  ended?: number
 }
 export type Item =
   | { kind: 'user'; id: string; text: string }
@@ -16,6 +19,8 @@ export type Item =
       text: string
       steps: Step[]
       sources: { url: string; title: string }[]
+      startedAt: number
+      endedAt?: number
       confirm?: { id: string; title: string; detail: string }
       error?: string
     }
@@ -69,7 +74,7 @@ export function reducer(state: AgentState, action: Action): AgentState {
         busy: true,
         items: [
           ...state.items,
-          { kind: 'assistant', id: e.turnId, text: '', steps: [], sources: [] }
+          { kind: 'assistant', id: e.turnId, text: '', steps: [], sources: [], startedAt: Date.now() }
         ]
       }
     case 'text':
@@ -78,13 +83,16 @@ export function reducer(state: AgentState, action: Action): AgentState {
       return {
         ...state,
         items: patchLast(state.items, (a) => {
-          const exists = a.steps.some((s) => s.id === e.id)
+          const before = a.steps.find((s) => s.id === e.id)
+          const exists = !!before
           const step: Step = {
             id: e.id,
             label: e.label,
             status: e.status,
             summary: e.summary,
-            agent: e.agent
+            agent: e.agent,
+            at: before?.at ?? Date.now(),
+            ended: e.status === 'running' ? undefined : (before?.ended ?? Date.now())
           }
           return {
             ...a,
@@ -110,12 +118,15 @@ export function reducer(state: AgentState, action: Action): AgentState {
         )
       }
     case 'done':
-      return { busy: false, items: patchLast(state.items, (a) => ({ ...a, confirm: undefined })) }
+      return {
+        busy: false,
+        items: patchLast(state.items, (a) => ({ ...a, confirm: undefined, endedAt: Date.now() }))
+      }
     case 'error': {
       const i = lastAssistant(state.items)
       const items =
         i >= 0 && state.items[i].id === e.turnId
-          ? patchLast(state.items, (a) => ({ ...a, error: e.message }))
+          ? patchLast(state.items, (a) => ({ ...a, error: e.message, endedAt: Date.now() }))
           : [
               ...state.items,
               {
@@ -124,6 +135,8 @@ export function reducer(state: AgentState, action: Action): AgentState {
                 text: '',
                 steps: [],
                 sources: [],
+                startedAt: Date.now(),
+                endedAt: Date.now(),
                 error: e.message
               }
             ]
