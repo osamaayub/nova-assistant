@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
-import type { Headline } from '../../../../shared/types'
+import { useEffect, useState } from 'react'
 import { nova } from '../../lib/api'
 import { Globe } from './Globe'
+import { useHeadlines } from './useHeadlines'
 
 function ago(at: number | null): string {
   if (!at) return ''
@@ -14,28 +14,13 @@ function ago(at: number | null): string {
 
 /** The World Monitor: a living globe on one side, today's headlines on the other. */
 export function Monitor({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const [items, setItems] = useState<Headline[] | null>(null)
-  const [error, setError] = useState('')
+  const { items, error, reload: load } = useHeadlines()
   const [now, setNow] = useState(() => new Date())
 
   useEffect(() => {
     const iv = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(iv)
   }, [])
-
-  const load = useCallback(async () => {
-    try {
-      setItems(await nova.headlines())
-      setError('')
-    } catch {
-      setError('Could not reach the news feeds. Check your internet connection.')
-      setItems([])
-    }
-  }, [])
-
-  useEffect(() => {
-    void Promise.resolve().then(load)
-  }, [load])
 
   return (
     <div className="monitor" role="dialog" aria-label="World monitor">

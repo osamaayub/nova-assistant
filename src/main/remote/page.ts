@@ -14,6 +14,7 @@ header h1{font-size:18px;margin:0;flex:1}
 .dot.busy{background:var(--accent);animation:p 1s infinite}
 @keyframes p{50%{opacity:.3}}
 button{font:inherit;color:inherit;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:8px 14px}
+#mic{display:grid;place-items:center;width:44px;padding:0;flex:none}#mic.on{background:var(--accent);color:var(--ink);border-color:var(--accent)}#call.on{background:#b91c1c;border-color:#b91c1c;color:#fff}
 button.primary{background:var(--accent);color:var(--ink);border-color:var(--accent);font-weight:600}
 #log{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:12px}
 .me{align-self:flex-end;max-width:85%;background:var(--surface-2);border:1px solid var(--line);border-radius:16px;padding:8px 12px;white-space:pre-wrap;overflow-wrap:anywhere}
@@ -92,10 +93,11 @@ function onEvent(e){
   if(e.type==='done'){
     document.querySelectorAll('.ask').forEach(function(a){a.remove()});
     setBusy(false);
-    if(speak&&cur&&cur.text&&window.speechSynthesis){try{speechSynthesis.cancel();speechSynthesis.speak(new SpeechSynthesisUtterance(cur.text))}catch(x){}}
-    cur=null;return
+    var spoken=cur&&cur.text;cur=null;
+    if(speak&&spoken&&window.speechSynthesis){say(spoken)}else if(calling){startListening()}
+    return
   }
-  if(e.type==='error'){ensure();cur.txt.textContent=e.message;cur.txt.className='txt err';setBusy(false);cur=null;return}
+  if(e.type==='error'){ensure();cur.txt.textContent=e.message;cur.txt.className='txt err';setBusy(false);cur=null;if(calling)setTimeout(startListening,1500);return}
   if(e.type==='notify'){note(e.title+': '+e.body)}
 }
 function connect(){
@@ -117,12 +119,52 @@ function connect(){
     setTimeout(connect,retry);retry=Math.min(retry*1.5,15000)
   })
 }
-$('form').onsubmit=function(ev){
-  ev.preventDefault();if(busy)return;
-  var t=input.value.trim();if(!t||!token)return;
+
+var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+var canTalk=!!SR&&window.isSecureContext;
+var micBtn=$('mic'),callBtn=$('call');
+var rec=null,calling=false,talking=false,heard=false;
+if(!canTalk){micBtn.hidden=true;callBtn.hidden=true}
+function setMic(on){talking=on;micBtn.className=on?'on':''}
+function speaking(){return !!(window.speechSynthesis&&speechSynthesis.speaking)}
+function say(text){
+  if(!window.speechSynthesis){afterSpeech();return}
+  try{speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(text);u.onend=afterSpeech;u.onerror=afterSpeech;speechSynthesis.speak(u)}catch(x){afterSpeech()}
+}
+function afterSpeech(){if(calling&&!busy)startListening()}
+function stopListening(){
+  calling=false;callBtn.className='';callBtn.textContent='Call';
+  if(rec){try{rec.abort()}catch(e){}}
+  rec=null;setMic(false)
+}
+function startListening(){
+  if(!canTalk||!token||busy||talking||speaking())return;
+  var r=new SR();rec=r;heard=false;
+  r.lang=navigator.language||'en-US';r.interimResults=true;r.continuous=false;
+  r.onresult=function(e){
+    var t='',fin=false;
+    for(var i=e.resultIndex;i<e.results.length;i++){t+=e.results[i][0].transcript;if(e.results[i].isFinal)fin=true}
+    input.value=t;if(fin){heard=true;submit(t)}
+  };
+  r.onerror=function(ev){
+    setMic(false);
+    if(ev.error==='not-allowed'||ev.error==='service-not-allowed'){stopListening();note('Allow the microphone for this page to talk to Nova.','err')}
+  };
+  r.onend=function(){setMic(false);rec=null;if(calling&&!busy&&!heard&&!speaking())setTimeout(startListening,300)};
+  try{r.start();setMic(true)}catch(x){setMic(false)}
+}
+function submit(t){
+  t=(t||'').trim();if(!t||!token||busy)return;
   input.value='';log.appendChild(el('div','me',t));cur=null;setBusy(true);bottom();
   post('/api/send',{text:t}).catch(function(){setBusy(false);note('Could not reach Nova. Is your PC on and on the same Wi-Fi?','err')})
+}
+micBtn.onclick=function(){if(talking){stopListening()}else{startListening()}};
+callBtn.onclick=function(){
+  if(calling){stopListening();return}
+  calling=true;speak=true;speakBtn.textContent='Voice on';callBtn.className='on';callBtn.textContent='End call';
+  startListening()
 };
+$('form').onsubmit=function(ev){ev.preventDefault();submit(input.value)};
 act.onclick=function(){if(busy){post('/api/stop').catch(function(){})}};
 $('fresh').onclick=function(){if(!token)return;post('/api/new').then(function(){log.textContent='';cur=null;setBusy(false)}).catch(function(){})};
 speakBtn.onclick=function(){speak=!speak;speakBtn.textContent=speak?'Voice on':'Voice off';try{localStorage.setItem('nova-speak',speak?'1':'0')}catch(e){}if(!speak&&window.speechSynthesis)speechSynthesis.cancel()};
@@ -140,9 +182,9 @@ export function phonePage(nonce: string): string {
 <title>Nova</title>
 <style nonce="${nonce}">${CSS}</style></head>
 <body>
-<header><span id="dot" class="dot"></span><h1 id="title">Nova</h1><button id="speak" type="button">Voice off</button><button id="fresh" type="button" aria-label="New chat">New</button></header>
+<header><span id="dot" class="dot"></span><h1 id="title">Nova</h1><button id="call" type="button">Call</button><button id="speak" type="button">Voice off</button><button id="fresh" type="button" aria-label="New chat">New</button></header>
 <main id="log" role="log" aria-live="polite"></main>
-<form id="form"><input id="msg" type="text" placeholder="Message Nova" autocomplete="off" maxlength="4000" aria-label="Message Nova"><button id="act" class="primary" type="submit">Send</button></form>
+<form id="form"><input id="msg" type="text" placeholder="Message Nova" autocomplete="off" maxlength="4000" aria-label="Message Nova"><button id="mic" type="button" aria-label="Talk"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z"/></svg></button><button id="act" class="primary" type="submit">Send</button></form>
 <script nonce="${nonce}">${JS}</script>
 </body></html>`
 }

@@ -60,8 +60,10 @@ describe('team of agents', () => {
     // The PC agent only saw its own tools; the main agent only saw hand-over and memory tools.
     expect(seen[1].tools.map((t) => t.name)).toEqual([
       'open_app',
+      'close_app',
       'open_website',
       'play_music',
+      'whatsapp_message',
       'system_status',
       'set_timer',
       'get_datetime'

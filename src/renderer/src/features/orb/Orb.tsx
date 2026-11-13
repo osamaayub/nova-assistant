@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
+import type { AvatarId } from '../../../../shared/types'
+import { avatarPoints } from './avatars'
 
 export type OrbState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'offline'
 
@@ -15,6 +17,7 @@ const vertex = /* glsl */ `
 uniform float uTime;
 uniform float uLevel;
 uniform float uSwirl;
+uniform float uSway;
 attribute float aSeed;
 varying float vGlow;
 
@@ -33,7 +36,8 @@ float noise(vec3 p) {
 
 void main() {
   vec3 p = position;
-  float a = uTime * (0.15 + uSwirl) + p.y * uSwirl * 2.0;
+  // The core turns all the way round; a figure only sways, so its face stays toward you.
+  float a = mix(uTime * (0.15 + uSwirl), sin(uTime * 0.5) * 0.4 + uTime * uSwirl * 0.5, uSway) + p.y * uSwirl * 2.0;
   p.xz = mat2(cos(a), -sin(a), sin(a), cos(a)) * p.xz;
   float n = noise(p * 1.6 + uTime * 0.35);
   float push = 1.0 + n * (0.12 + uLevel * 0.55) + aSeed * uLevel * 0.25;
@@ -76,17 +80,21 @@ function glowTexture(): THREE.Texture {
 export function Orb({
   state,
   level,
-  colors
+  colors,
+  avatar = 'core'
 }: {
   state: OrbState
   level: number
   colors: [string, string]
+  avatar?: AvatarId
 }): React.JSX.Element {
   const host = useRef<HTMLDivElement>(null)
-  const live = useRef({ state, level, colors })
+  const live = useRef({ state, level, colors, avatar })
+  const morphTo = useRef<(a: AvatarId) => void>(() => undefined)
   useEffect(() => {
-    live.current = { state, level, colors }
-  }, [state, level, colors])
+    live.current = { state, level, colors, avatar }
+  }, [state, level, colors, avatar])
+  useEffect(() => morphTo.current(avatar), [avatar])
 
   useEffect(() => {
     const el = host.current
@@ -100,17 +108,21 @@ export function Orb({
     const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 50)
     camera.position.z = 4.2
 
-    // Evenly spread points on a sphere (Fibonacci lattice).
+    // Particle positions for the chosen avatar, and a smooth morph when it changes.
     const count = 2600
-    const pos = new Float32Array(count * 3)
+    const pos = avatarPoints(live.current.avatar, count)
     const seed = new Float32Array(count)
-    const golden = Math.PI * (3 - Math.sqrt(5))
-    for (let i = 0; i < count; i++) {
-      const y = 1 - (i / (count - 1)) * 2
-      const r = Math.sqrt(1 - y * y)
-      const t = golden * i
-      pos.set([Math.cos(t) * r, y, Math.sin(t) * r], i * 3)
-      seed[i] = Math.random()
+    for (let i = 0; i < count; i++) seed[i] = Math.random()
+    let from = pos.slice()
+    let to = pos.slice()
+    let morph = 1
+    let shape: AvatarId = live.current.avatar
+    morphTo.current = (next) => {
+      if (next === shape) return
+      shape = next
+      from = (geo.getAttribute('position').array as Float32Array<ArrayBuffer>).slice()
+      to = avatarPoints(next, count)
+      morph = 0
     }
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
@@ -119,6 +131,7 @@ export function Orb({
       uTime: { value: 0 },
       uLevel: { value: 0 },
       uSwirl: { value: 0 },
+      uSway: { value: live.current.avatar === 'core' ? 0 : 1 },
       uColorA: { value: new THREE.Color(live.current.colors[0]) },
       uColorB: { value: new THREE.Color(live.current.colors[1]) }
     }
@@ -198,6 +211,14 @@ export function Orb({
       uniforms.uSwirl.value +=
         ((s === 'thinking' ? 0.9 : 0.05) - uniforms.uSwirl.value) * Math.min(1, dt * 3)
       uniforms.uTime.value += dt * (reduce ? 0.25 : 1)
+      uniforms.uSway.value += ((shape === 'core' ? 0 : 1) - uniforms.uSway.value) * Math.min(1, dt * 3)
+      if (morph < 1) {
+        morph = Math.min(1, morph + dt / 0.8)
+        const e = morph * morph * (3 - 2 * morph)
+        const attr = geo.getAttribute('position') as THREE.BufferAttribute
+        for (let i = 0; i < count * 3; i++) attr.array[i] = from[i] + (to[i] - from[i]) * e
+        attr.needsUpdate = true
+      }
       uniforms.uColorA.value.lerp(new THREE.Color(c[0]), dt * 3)
       uniforms.uColorB.value.lerp(new THREE.Color(c[1]), dt * 3)
       const energy = uniforms.uLevel.value

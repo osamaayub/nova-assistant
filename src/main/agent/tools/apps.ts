@@ -68,6 +68,99 @@ export function resolveApp(name: string, custom: ToolContext['customApps']): Res
   }
 }
 
+/**
+ * The program (process) behind each built-in app, so Nova can close it. File Explorer is left out on
+ * purpose: closing its process also removes the taskbar and desktop.
+ */
+const PROCESSES: Record<string, string> = {
+  notepad: 'notepad.exe',
+  calculator: 'CalculatorApp.exe',
+  paint: 'mspaint.exe',
+  'task manager': 'Taskmgr.exe',
+  settings: 'SystemSettings.exe',
+  camera: 'WindowsCamera.exe',
+  chrome: 'chrome.exe',
+  edge: 'msedge.exe',
+  firefox: 'firefox.exe',
+  'vs code': 'Code.exe',
+  spotify: 'Spotify.exe',
+  whatsapp: 'WhatsApp.exe',
+  word: 'WINWORD.EXE',
+  excel: 'EXCEL.EXE',
+  powerpoint: 'POWERPNT.EXE',
+  outlook: 'OUTLOOK.EXE'
+}
+
+/** Programs that must never be closed, even if the user added one by path. */
+const PROTECTED = new Set(
+  [
+    'explorer.exe',
+    'winlogon.exe',
+    'csrss.exe',
+    'wininit.exe',
+    'services.exe',
+    'lsass.exe',
+    'svchost.exe',
+    'dwm.exe',
+    'system',
+    'smss.exe',
+    'electron.exe',
+    'nova.exe'
+  ].map((n) => n.toLowerCase())
+)
+
+/** The process name to close for an app, or null when Nova must not (or cannot) close it. */
+export function processFor(name: string, custom: ToolContext['customApps']): string | null {
+  const n = norm(name)
+  const mine = custom.find((a) => norm(a.name) === n)
+  let image: string | undefined
+  if (mine) {
+    const base = mine.path.split(/[\\/]/).pop() ?? ''
+    image = /^[\w .()-]+\.exe$/i.test(base) ? base : undefined
+  } else {
+    const key = BUILT_IN_APPS[n] ? n : ALIASES[n]
+    image = key ? PROCESSES[key] : undefined
+  }
+  return image && !PROTECTED.has(image.toLowerCase()) ? image : null
+}
+
+export const closeApp = defineTool({
+  name: 'close_app',
+  label: 'Closing an app',
+  description:
+    "Close a program on the user's Windows PC, like clicking its X. Only apps in the known list can be closed. The user must approve first, because unsaved work in that program may be lost.",
+  schema: z.object({
+    app: z.string().min(1).max(60).describe('App name, e.g. "chrome", "spotify", "notepad"')
+  }),
+  async run({ app }, ctx) {
+    if (ctx.platform.os !== 'win32')
+      return { content: 'Closing apps only works on Windows.', isError: true }
+    const found = resolveApp(app, ctx.customApps)
+    const image = processFor(app, ctx.customApps)
+    if (!found || !image)
+      return {
+        content: `Nova can't close "${app}". It can close: ${Object.keys(PROCESSES).join(', ')} and apps you added in Settings.`,
+        isError: true,
+        summary: `Can't close ${app}`
+      }
+    const ok = await ctx.confirm(
+      `Close ${found.label}?`,
+      `Nova will ask ${found.label} to close. Anything you have not saved in it may be lost.`
+    )
+    if (!ok) return { content: 'The user declined, so nothing was closed.', summary: 'Cancelled' }
+    const result = await ctx.platform.closeProcess(image)
+    if (result === 'closed')
+      return { content: `Asked ${found.label} to close.`, summary: `Closed ${found.label}` }
+    if (result === 'not-running')
+      return { content: `${found.label} is not running.`, summary: `${found.label} isn't open` }
+    return {
+      content: `Could not close ${found.label}.`,
+      isError: true,
+      summary: `Couldn't close ${found.label}`
+    }
+  }
+})
+
 export function appNames(custom: ToolContext['customApps']): string[] {
   return [...custom.map((a) => a.name), ...Object.keys(BUILT_IN_APPS)]
 }

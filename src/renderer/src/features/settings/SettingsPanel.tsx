@@ -10,6 +10,8 @@ import type {
   Settings
 } from '../../../../shared/types'
 import { nova } from '../../lib/api'
+import { AVATARS } from '../orb/avatars'
+import { avatarPatch } from '../orb/avatarVoice'
 import { ConnectorGallery } from './ConnectorGallery'
 import { KOKORO_VOICES, systemVoices } from '../voice/speaker'
 
@@ -291,6 +293,20 @@ export function SettingsPanel({
             </button>
           ))}
         </div>
+        <p className="hint">Avatar and voice. Each avatar speaks with its own voice.</p>
+        <div className="chips">
+          {AVATARS.map((a) => (
+            <button
+              key={a.id}
+              className={`chip ${settings.avatar === a.id ? 'on' : ''}`}
+              onClick={async () => save(await avatarPatch(a.id))}
+              aria-pressed={settings.avatar === a.id}
+              title={a.hint}
+            >
+              {a.label}
+            </button>
+          ))}
+        </div>
         {settings.character === 'custom' && (
           <>
             <label>
@@ -426,8 +442,10 @@ export function SettingsPanel({
           <div className="phone-pair">
             <img src={remote.qr} width={160} height={160} alt="Scan with your phone camera" />
             <p className="hint">
-              Scan with your phone camera. {remote.phones} phone{remote.phones === 1 ? '' : 's'}{' '}
-              connected. Windows may ask to allow Nova on private networks. Choose Allow.
+              Scan with your phone camera. The first time, the phone warns about the certificate:
+              tap Advanced, then Continue. It is made on this PC. Then tap Call to talk to Nova.{' '}
+              {remote.phones} phone{remote.phones === 1 ? '' : 's'} connected. Windows may ask to
+              allow Nova on private networks. Choose Allow.
             </p>
             <div className="row">
               <button

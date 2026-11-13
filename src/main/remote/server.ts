@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import { createServer as createSecureServer } from 'node:https'
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import type { AgentEvent } from '../../shared/types'
 import { phonePage } from './page'
@@ -26,7 +27,10 @@ export function isPrivateAddress(raw: string): boolean {
   if (!m) return false
   const [x, y] = [Number(m[1]), Number(m[2])]
   return (
-    x === 10 || x === 127 || (x === 192 && y === 168) || (x === 172 && y >= 16 && y <= 31) ||
+    x === 10 ||
+    x === 127 ||
+    (x === 192 && y === 168) ||
+    (x === 172 && y >= 16 && y <= 31) ||
     (x === 169 && y === 254)
   )
 }
@@ -34,7 +38,10 @@ export function isPrivateAddress(raw: string): boolean {
 /** Guards against DNS rebinding: the Host header must be a local name or a private IP. */
 export function isAllowedHost(header: string | undefined): boolean {
   if (!header) return false
-  const host = header.replace(/:\d+$/, '').replace(/^\[|\]$/g, '').toLowerCase()
+  const host = header
+    .replace(/:\d+$/, '')
+    .replace(/^\[|\]$/g, '')
+    .toLowerCase()
   return host === 'localhost' || host.endsWith('.local') || isPrivateAddress(host)
 }
 
@@ -58,7 +65,9 @@ export class RemoteServer {
   constructor(
     private handlers: RemoteHandlers,
     token: string,
-    private assistantName: () => string = () => 'Nova'
+    private assistantName: () => string = () => 'Nova',
+    /** With a certificate the page is served over https, which phones need to allow the microphone. */
+    private tls?: { key: string; cert: string }
   ) {
     this.tokenDigest = digest(token)
   }
@@ -79,7 +88,8 @@ export class RemoteServer {
 
   listen(port = REMOTE_PORT, host = '0.0.0.0'): Promise<number> {
     return new Promise((resolve, reject) => {
-      const server = createServer((req, res) => this.handle(req, res))
+      const onRequest = (req: IncomingMessage, res: ServerResponse): void => this.handle(req, res)
+      const server = this.tls ? createSecureServer(this.tls, onRequest) : createServer(onRequest)
       server.once('error', reject)
       server.listen(port, host, () => {
         server.removeListener('error', reject)
@@ -130,7 +140,12 @@ export class RemoteServer {
     else f.n += 1
   }
 
-  private reply(res: ServerResponse, status: number, body: string, type = 'application/json'): void {
+  private reply(
+    res: ServerResponse,
+    status: number,
+    body: string,
+    type = 'application/json'
+  ): void {
     res.writeHead(status, {
       'Content-Type': `${type}; charset=utf-8`,
       'Cache-Control': 'no-store',

@@ -1,6 +1,7 @@
 import { app, Notification, shell } from 'electron'
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import type { Platform } from './agent/tools/types'
+import { WHATSAPP_ENTER_SCRIPT } from './whatsappKey'
 
 /** The real Windows (or dev machine) implementation of what tools may do. */
 export function createPlatform(): Platform {
@@ -33,6 +34,34 @@ export function createPlatform(): Platform {
       }),
     notify: (title, body) => {
       if (Notification.isSupported()) new Notification({ title, body }).show()
-    }
+    },
+    pressEnter: (target) =>
+      new Promise((resolve) => {
+        if (process.platform !== 'win32' || target !== 'whatsapp') return resolve(false)
+        execFile(
+          'powershell.exe',
+          [
+            '-NoProfile',
+            '-NonInteractive',
+            '-ExecutionPolicy',
+            'Bypass',
+            '-Command',
+            WHATSAPP_ENTER_SCRIPT
+          ],
+          { windowsHide: true, timeout: 15_000 },
+          (err) => resolve(!err)
+        )
+      }),
+    closeProcess: (image) =>
+      new Promise((resolve) => {
+        if (process.platform !== 'win32') return resolve('failed')
+        // No /F: this asks the program to close, so it can still offer to save your work.
+        execFile('taskkill', ['/IM', image], { windowsHide: true }, (err, _out, stderr) => {
+          if (!err) return resolve('closed')
+          // taskkill answers 128 when no process has that name.
+          const code = Number((err as { code?: unknown }).code)
+          resolve(code === 128 || /not found/i.test(String(stderr)) ? 'not-running' : 'failed')
+        })
+      })
   }
 }

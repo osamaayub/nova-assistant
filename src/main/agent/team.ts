@@ -1,11 +1,11 @@
 import { z } from 'zod'
-import { openApp } from './tools/apps'
+import { closeApp, openApp } from './tools/apps'
 import { readCodeFile, runProjectCheck, writeCodeFile } from './tools/code'
-import { listFolder, openFolder, organizeDownloads } from './tools/files'
+import { createFolder, findFile, listFolder, openFolder, organizeDownloads } from './tools/files'
 import { forgetFact, rememberFact } from './tools/memory'
 import { getDateTime, setTimer, systemStatus } from './tools/system'
 import { defineTool, type NovaTool } from './tools/types'
-import { openWebsite, playMusic, readWebPage } from './tools/web'
+import { openWebsite, playMusic, readWebPage, whatsappMessage } from './tools/web'
 
 /**
  * Nova works as a small team. The main agent talks to you and decides who should do the job;
@@ -28,21 +28,30 @@ export const SPECIALISTS: Specialist[] = [
     id: 'pc',
     name: 'PC agent',
     tool: 'ask_pc_agent',
-    when: 'opening apps or websites, playing music, checking how the PC is doing, timers and reminders',
-    tools: [openApp, openWebsite, playMusic, systemStatus, setTimer, getDateTime],
+    when: 'opening or closing apps, opening websites, playing music or a video, sending a WhatsApp message, checking how the PC is doing, timers and reminders',
+    tools: [
+      openApp,
+      closeApp,
+      openWebsite,
+      playMusic,
+      whatsappMessage,
+      systemStatus,
+      setTimer,
+      getDateTime
+    ],
     webSearch: false,
     instructions:
-      'You are the PC agent. You control apps, websites, music, timers and system checks on a Windows PC.'
+      'You are the PC agent. You open and close apps, open websites, play music and videos, send WhatsApp messages, set timers and check the PC on Windows. Send a WhatsApp message only after the user gave you the number and the text. Say it was sent only if the tool result says sent; if it says it was not sent, tell the user to press Send.'
   },
   {
     id: 'files',
     name: 'Files agent',
     tool: 'ask_files_agent',
-    when: "looking in or opening the user's folders, and tidying Downloads",
-    tools: [listFolder, openFolder, organizeDownloads],
+    when: "looking in, finding files in, creating or opening the user's folders, and tidying Downloads",
+    tools: [listFolder, openFolder, findFile, createFolder, organizeDownloads],
     webSearch: false,
     instructions:
-      "You are the Files agent. You look in and organize the user's own folders. You never delete anything."
+      "You are the Files agent. You look in, find files in, create and organize the user's own folders. You never delete or overwrite anything."
   },
   {
     id: 'architect',
@@ -72,7 +81,7 @@ export const SPECIALISTS: Specialist[] = [
     tools: [listFolder, readCodeFile],
     webSearch: false,
     instructions:
-      "You are the Reviewer agent. You review code read-only for correctness, security, edge cases and clarity. You never edit files. Report concrete findings with file and line references, ordered by severity."
+      'You are the Reviewer agent. You review code read-only for correctness, security, edge cases and clarity. You never edit files. Report concrete findings with file and line references, ordered by severity.'
   },
   {
     id: 'tester',
@@ -82,7 +91,7 @@ export const SPECIALISTS: Specialist[] = [
     tools: [listFolder, readCodeFile, runProjectCheck],
     webSearch: false,
     instructions:
-      "You are the Tester agent. You run only the fixed project checks after approval and read the output. You never edit files or run arbitrary commands. Report pass or fail with the useful error details."
+      'You are the Tester agent. You run only the fixed project checks after approval and read the output. You never edit files or run arbitrary commands. Report pass or fail with the useful error details.'
   },
   {
     id: 'research',

@@ -56,8 +56,7 @@ export function jsonSchemaToZod(schema: Record<string, unknown> | undefined): z.
     enum?: unknown[]
     anyOf?: Record<string, unknown>[]
   }
-  if (s.enum?.length)
-    return z.enum(s.enum.map((v) => String(v)) as [string, ...string[]])
+  if (s.enum?.length) return z.enum(s.enum.map((v) => String(v)) as [string, ...string[]])
   switch (s.type) {
     case 'string':
       return z.string()

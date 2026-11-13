@@ -1,16 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { AgentEvent, CharacterId, PublicSettings } from '../../shared/types'
+import type {
+  AgentEvent,
+  AvatarId,
+  CharacterId,
+  Fact,
+  McpServerStatus,
+  PublicSettings
+} from '../../shared/types'
 import { Transcript } from './features/chat/Transcript'
 import { useAgentState } from './features/chat/useAgent'
+import { AvatarFrame } from './features/command/AvatarFrame'
+import { CircuitWires } from './features/command/CircuitWires'
+import { statusLine } from './features/command/status'
+import { StonicScreen } from './features/command/StonicScreen'
 import { CrewBoard } from './features/crew/CrewBoard'
+import { avatarPatch } from './features/orb/avatarVoice'
 import { Orb, type OrbState } from './features/orb/Orb'
 import { Monitor } from './features/monitor/Monitor'
+import { SatPanel } from './features/monitor/SatPanel'
 import { SettingsPanel } from './features/settings/SettingsPanel'
 import { Listener } from './features/voice/listener'
 import { Speaker } from './features/voice/speaker'
 import { WakeListener } from './features/voice/wakeWord'
 import { nova } from './lib/api'
 import { SentenceSplitter } from './lib/sentences'
+import { useWide } from './lib/useWide'
 
 const COLORS: Record<CharacterId, [string, string]> = {
   nova: ['#7dd3fc', '#6366f1'],
@@ -34,6 +48,9 @@ export default function App(): React.JSX.Element {
   const [settings, setSettings] = useState<PublicSettings | null>(null)
   const [panel, setPanel] = useState(false)
   const [section, setSection] = useState<string | undefined>()
+  const [facts, setFacts] = useState<Fact[]>([])
+  const [connectors, setConnectors] = useState<McpServerStatus[]>([])
+  const wide = useWide()
   const [monitor, setMonitor] = useState(false)
   const [text, setText] = useState('')
   const [listening, setListening] = useState(false)
@@ -144,8 +161,7 @@ export default function App(): React.JSX.Element {
       await new Promise<void>((resolve) => {
         const iv = setInterval(() => {
           // Wait for the first sound, then end 1.5 s after the voice stops. Hard cap: 12 s.
-          const heard =
-            listener.lastVoiceAt > 0 && Date.now() - listener.lastVoiceAt > 1500
+          const heard = listener.lastVoiceAt > 0 && Date.now() - listener.lastVoiceAt > 1500
           if ((heard && Date.now() - t0 > 800) || Date.now() - t0 > 12000) {
             clearInterval(iv)
             resolve()
@@ -220,6 +236,12 @@ export default function App(): React.JSX.Element {
     }
   }, [startTalk, endTalk, panel, speaker])
 
+  // Keep the Memory and Skills circuits current: on start, after each answer, and after Settings closes.
+  useEffect(() => {
+    void nova.listFacts().then(setFacts)
+    void nova.listMcp().then(setConnectors)
+  }, [state.busy, panel])
+
   // Load Whisper early only when the wake word needs it. Otherwise it loads on first use.
   useEffect(() => {
     listener.setKeepLoaded(!!settings?.wakeWord)
@@ -227,6 +249,24 @@ export default function App(): React.JSX.Element {
     const t = setTimeout(() => listener.warm(), 1500)
     return () => clearTimeout(t)
   }, [listener, settings?.wakeWord])
+
+  const openSection = (id: string): void => {
+    setSection(id)
+    setPanel(true)
+  }
+
+  /** Picks an avatar and gives it its own voice (natural and Windows). */
+  const changeAvatar = async (id: AvatarId): Promise<void> =>
+    setSettings(await nova.saveSettings(await avatarPatch(id)))
+
+  /** Start AI: turns always-listening on or off. Push to talk and typing always work. */
+  const toggleAi = async (): Promise<void> => {
+    const on = !settingsRef.current?.wakeWord
+    setSettings(await nova.saveSettings({ wakeWord: on }))
+    if (on && settingsRef.current?.speakReplies)
+      speaker.say('Online. Say hey Nova, or hold space to talk.')
+    else speaker.stop()
+  }
 
   if (!settings) return <div className="app" />
 
@@ -258,6 +298,268 @@ export default function App(): React.JSX.Element {
             ? 'Thinking…'
             : 'Hold Space to talk'
 
+  const orb = (
+    <Orb
+      state={orbState}
+      level={level}
+      colors={COLORS[settings.character]}
+      avatar={settings.avatar}
+    />
+  )
+  const onboarding = (
+    <>
+      {blocked && (
+        <div className="onboard">
+          <p>
+            Claude is selected but no key is saved. Use the free local brain instead, or add your
+            key.
+          </p>
+          <div className="row" style={{ justifyContent: 'center' }}>
+            <button
+              className="btn primary"
+              onClick={async () => setSettings(await nova.saveSettings({ provider: 'ollama' }))}
+            >
+              Use free local AI
+            </button>
+            <button className="btn" onClick={() => setPanel(true)}>
+              Add Claude key
+            </button>
+          </div>
+        </div>
+      )}
+      {!blocked && !state.items.length && (
+        <div className="suggestions">
+          {[
+            'What can you do?',
+            'Play some lofi music',
+            'How is my PC doing?',
+            'Tidy my Downloads folder'
+          ].map((s) => (
+            <button key={s} className="chip" onClick={() => send(s)}>
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  )
+  const composer = (
+    <form
+      className="composer"
+      onSubmit={(e) => {
+        e.preventDefault()
+        send(text)
+        setText('')
+      }}
+    >
+      <button
+        type="button"
+        className={`mic ${listening ? 'on' : ''}`}
+        aria-label={listening ? 'Release to send' : 'Hold to talk'}
+        aria-pressed={listening}
+        onPointerDown={(e) => {
+          e.currentTarget.setPointerCapture(e.pointerId)
+          void startTalk()
+        }}
+        onPointerUp={() => void endTalk()}
+        onPointerCancel={() => {
+          listener.cancel()
+          setListening(false)
+        }}
+        disabled={blocked || transcribing}
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+          <path
+            fill="currentColor"
+            d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z"
+          />
+        </svg>
+      </button>
+      <input
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder={`Message ${name}`}
+        aria-label={`Message ${name}`}
+        maxLength={4000}
+      />
+      {state.busy || speaking ? (
+        <button
+          type="button"
+          className="btn"
+          onClick={() => {
+            speaker.stop()
+            void nova.stop()
+          }}
+        >
+          Stop
+        </button>
+      ) : (
+        <button type="submit" className="btn primary" disabled={!text.trim()}>
+          Send
+        </button>
+      )}
+    </form>
+  )
+  const banner = (
+    <>
+      {(download || micError) && (
+        <p className={micError ? 'banner error' : 'banner'}>{micError || download}</p>
+      )}
+    </>
+  )
+  const transcript = (
+    <Transcript
+      items={state.items}
+      busy={state.busy}
+      name={name}
+      onConfirm={(id, ok) => {
+        dispatch({ type: 'answered' })
+        void nova.confirm(id, ok)
+      }}
+    />
+  )
+  const crewBoard = (
+    <CrewBoard
+      steps={lastSteps}
+      busy={state.busy}
+      lead={name}
+      command={lastCommand}
+      startedAt={lastTurn?.startedAt}
+      endedAt={lastTurn?.endedAt}
+      always={wide}
+    />
+  )
+  const modals = (
+    <>
+      {monitor && <Monitor onClose={() => setMonitor(false)} />}
+      {panel && (
+        <SettingsPanel
+          settings={settings}
+          section={section}
+          onChange={setSettings}
+          onClose={() => {
+            setPanel(false)
+            setSection(undefined)
+          }}
+        />
+      )}
+    </>
+  )
+
+  if (wide)
+    return (
+      <div className="app wide" data-character={settings.character}>
+        <header className="top">
+          <div>
+            <h1>{name}</h1>
+            <p className="status" role="status">
+              {status}
+            </p>
+          </div>
+          <div className="top-actions">
+            <button
+              className={`start-ai ${settings.wakeWord ? 'on' : ''}`}
+              onClick={() => void toggleAi()}
+              aria-pressed={settings.wakeWord}
+              title={settings.wakeWord ? 'Stop always-listening' : 'Start always-listening'}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
+                <path d="M12 3v9" />
+                <path d="M6.4 6.8a8 8 0 1 0 11.2 0" />
+              </svg>{' '}
+              {settings.wakeWord ? 'AI on' : 'Start AI'}
+            </button>
+            <button
+              className="icon-btn"
+              onClick={() => setMonitor(true)}
+              aria-label="World monitor"
+              title="World monitor"
+            >
+              ◉
+            </button>
+            <button
+              className="icon-btn"
+              onClick={() => {
+                speaker.stop()
+                void nova.newChat()
+                dispatch({ type: 'clear' })
+              }}
+              aria-label="New chat"
+              title="New chat"
+            >
+              ＋
+            </button>
+            <button
+              className="icon-btn"
+              onClick={() => {
+                setSection(undefined)
+                setPanel(true)
+              }}
+              aria-label="Settings"
+              title="Settings"
+            >
+              ⚙
+            </button>
+          </div>
+        </header>
+        <StonicScreen
+          sat={<SatPanel onOpen={() => setMonitor(true)} />}
+          wires={
+            <CircuitWires
+              onOpen={openSection}
+              hints={{
+                memory: facts.length ? String(facts.length) : undefined,
+                connectors: connectors.some((c) => c.state === 'connected')
+                  ? String(connectors.filter((c) => c.state === 'connected').length)
+                  : undefined
+              }}
+            />
+          }
+          avatar={
+            <AvatarFrame
+              orb={orb}
+              line={statusLine(orbState, name, settings.wakeWord, blocked)}
+              aiOn={settings.wakeWord}
+              onToggleAi={() => void toggleAi()}
+              listening={listening}
+              micDisabled={blocked || transcribing}
+              onMicDown={(e) => {
+                e.currentTarget.setPointerCapture(e.pointerId)
+                void startTalk()
+              }}
+              onMicUp={() => void endTalk()}
+              onMicCancel={() => {
+                listener.cancel()
+                setListening(false)
+              }}
+              avatar={settings.avatar}
+              onAvatar={(id) => void changeAvatar(id)}
+            />
+          }
+          hub={crewBoard}
+          hubStatus={state.busy ? 'WORKING' : 'READY'}
+          voice={
+            <>
+              {onboarding}
+              {transcript}
+              {banner}
+              {composer}
+            </>
+          }
+          steps={lastSteps}
+          facts={facts}
+        />
+        {modals}
+      </div>
+    )
+
   return (
     <div className="app" data-character={settings.character}>
       <header className="top">
@@ -268,6 +570,25 @@ export default function App(): React.JSX.Element {
           </p>
         </div>
         <div className="top-actions">
+          <button
+            className={`start-ai ${settings.wakeWord ? 'on' : ''}`}
+            onClick={() => void toggleAi()}
+            aria-pressed={settings.wakeWord}
+            title={settings.wakeWord ? 'Stop always-listening' : 'Start always-listening'}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.4"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
+              <path d="M12 3v9" />
+              <path d="M6.4 6.8a8 8 0 1 0 11.2 0" />
+            </svg>{' '}
+            {settings.wakeWord ? 'AI on' : 'Start AI'}
+          </button>
           <button
             className="icon-btn"
             onClick={() => setMonitor(true)}
@@ -302,155 +623,34 @@ export default function App(): React.JSX.Element {
         </div>
       </header>
 
-      <div className={`stage ${state.items.length ? 'compact' : ''}`}>
-        <Orb state={orbState} level={level} colors={COLORS[settings.character]} />
-        <nav className="circuits" aria-label="Quick settings">
-          {(
-            [
-              ['Memory', 'memory'],
-              ['Skills', 'skills'],
-              ['Character', 'character'],
-              ['Settings', 'brain']
-            ] as const
-          ).map(([label, id]) => (
-            <button
-              key={id}
-              className="chip circuit"
-              onClick={() => {
-                setSection(id)
-                setPanel(true)
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </nav>
-        {blocked && (
-          <div className="onboard">
-            <p>
-              Claude is selected but no key is saved. Use the free local brain instead, or add your
-              key.
-            </p>
-            <div className="row" style={{ justifyContent: 'center' }}>
-              <button
-                className="btn primary"
-                onClick={async () => setSettings(await nova.saveSettings({ provider: 'ollama' }))}
-              >
-                Use free local AI
-              </button>
-              <button className="btn" onClick={() => setPanel(true)}>
-                Add Claude key
-              </button>
-            </div>
+      <div className="cc-flat">
+        <div className="cc-main">
+          <div className={`stage ${state.items.length ? 'compact' : ''}`}>
+            {orb}
+            <nav className="circuits" aria-label="Quick settings">
+              {(
+                [
+                  ['Memory', 'memory'],
+                  ['Skills', 'connectors'],
+                  ['Character', 'character'],
+                  ['Settings', 'brain']
+                ] as const
+              ).map(([label, id]) => (
+                <button key={id} className="chip circuit" onClick={() => openSection(id)}>
+                  {label}
+                </button>
+              ))}
+            </nav>
+            {onboarding}
           </div>
-        )}
-        {!blocked && !state.items.length && (
-          <div className="suggestions">
-            {[
-              'What can you do?',
-              'Play some lofi music',
-              'How is my PC doing?',
-              'Tidy my Downloads folder'
-            ].map((s) => (
-              <button key={s} className="chip" onClick={() => send(s)}>
-                {s}
-              </button>
-            ))}
-          </div>
-        )}
+          {crewBoard}
+          {transcript}
+          {banner}
+          {composer}
+        </div>
       </div>
 
-      <CrewBoard
-        steps={lastSteps}
-        busy={state.busy}
-        lead={name}
-        command={lastCommand}
-        startedAt={lastTurn?.startedAt}
-        endedAt={lastTurn?.endedAt}
-      />
-
-      <Transcript
-        items={state.items}
-        busy={state.busy}
-        name={name}
-        onConfirm={(id, ok) => {
-          dispatch({ type: 'answered' })
-          void nova.confirm(id, ok)
-        }}
-      />
-
-      {(download || micError) && (
-        <p className={micError ? 'banner error' : 'banner'}>{micError || download}</p>
-      )}
-
-      <form
-        className="composer"
-        onSubmit={(e) => {
-          e.preventDefault()
-          send(text)
-          setText('')
-        }}
-      >
-        <button
-          type="button"
-          className={`mic ${listening ? 'on' : ''}`}
-          aria-label={listening ? 'Release to send' : 'Hold to talk'}
-          aria-pressed={listening}
-          onPointerDown={(e) => {
-            e.currentTarget.setPointerCapture(e.pointerId)
-            void startTalk()
-          }}
-          onPointerUp={() => void endTalk()}
-          onPointerCancel={() => {
-            listener.cancel()
-            setListening(false)
-          }}
-          disabled={blocked || transcribing}
-        >
-          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-            <path
-              fill="currentColor"
-              d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z"
-            />
-          </svg>
-        </button>
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder={`Message ${name}`}
-          aria-label={`Message ${name}`}
-          maxLength={4000}
-        />
-        {state.busy || speaking ? (
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              speaker.stop()
-              void nova.stop()
-            }}
-          >
-            Stop
-          </button>
-        ) : (
-          <button type="submit" className="btn primary" disabled={!text.trim()}>
-            Send
-          </button>
-        )}
-      </form>
-
-      {monitor && <Monitor onClose={() => setMonitor(false)} />}
-      {panel && (
-        <SettingsPanel
-          settings={settings}
-          section={section}
-          onChange={setSettings}
-          onClose={() => {
-            setPanel(false)
-            setSection(undefined)
-          }}
-        />
-      )}
+      {modals}
     </div>
   )
 }

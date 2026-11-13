@@ -74,8 +74,9 @@ describe('web', () => {
       expect(safeWebUrl(bad)).toBeNull()
   })
 
-  it('opens music searches with the query encoded', async () => {
+  it('falls back to an encoded YouTube search when no video can be picked', async () => {
     const { ctx: c, calls } = await ctx()
+    c.fetch = async () => new Response('', { status: 503 })
     await playMusic.run({ query: 'lofi & chill', service: 'youtube' }, c)
     await playMusic.run({ query: 'Coldplay', service: 'spotify' }, c)
     expect(calls).toEqual([
