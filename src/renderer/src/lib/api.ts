@@ -12,6 +12,7 @@ function browserFake(): NovaApi {
     ollamaModel: 'qwen3:8b',
     agentMode: 'team',
     character: 'nova',
+    avatar: 'core',
     customName: 'Atlas',
     customPersonality: 'Calm and encouraging.',
     userName: '',

@@ -6,10 +6,17 @@ import { getSettings, readApiKey } from '../settings/store'
 import { runTurn } from './loop'
 import { buildSystemPrompt } from './prompt'
 import { serialize } from './serialize'
+import { withSearchSetting } from './service-helpers'
 import { claudeProvider } from './providers/claude'
 import { flmProvider } from './providers/flm'
 import { ollamaProvider } from './providers/ollama'
-import { connectorsSpecialist, mainAgentTools, SPECIALISTS, specialistPrompt, type Specialist } from './team'
+import {
+  connectorsSpecialist,
+  mainAgentTools,
+  SPECIALISTS,
+  specialistPrompt,
+  type Specialist
+} from './team'
 import type { McpManager } from '../mcp/manager'
 import type { Platform } from './tools/types'
 import type { Msg, Provider } from './types'
@@ -78,7 +85,7 @@ export class AgentService {
           system: specialistPrompt(s, provider.canSearchWeb && settings.webSearch),
           history: [],
           userText: task,
-          tools: s.tools,
+          tools: withSearchSetting(s.tools, settings.webSearch),
           webSearch: s.webSearch && settings.webSearch,
           ctx,
           turnId,
@@ -107,7 +114,10 @@ export class AgentService {
         }),
         history: this.history,
         userText,
-        tools: mainAgentTools(settings.agentMode, delegate, specialists),
+        tools: withSearchSetting(
+          mainAgentTools(settings.agentMode, delegate, specialists),
+          settings.webSearch
+        ),
         // In team mode the Research agent searches; in single mode Nova searches itself.
         webSearch: !team && settings.webSearch,
         ctx,

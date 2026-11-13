@@ -92,6 +92,118 @@ export const openFolder = defineTool({
   }
 })
 
+const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i
+
+/** One plain folder name: no slashes, no Windows-forbidden characters, nothing reserved. Returns a problem or ''. */
+export function folderNameProblem(name: string): string {
+  const n = name.trim()
+  if (!n || n.length > 80) return 'Give the folder a short name.'
+  if (n === '.' || n === '..' || /[\\/:*?"<>|]/.test(n) || [...n].some((c) => c.charCodeAt(0) < 32))
+    return 'A folder name can not contain \\ / : * ? " < > | or be "..".'
+  if (/[. ]$/.test(n)) return 'A folder name can not end with a dot or a space.'
+  if (RESERVED.test(n)) return `"${n}" is a name Windows keeps for itself.`
+  return ''
+}
+
+export const createFolder = defineTool({
+  name: 'create_folder',
+  label: 'Creating a folder',
+  description:
+    "Create a new, empty folder inside one of the user's folders (desktop, documents, downloads, pictures, music, videos), optionally inside a subfolder that already exists. It never overwrites or changes anything that exists.",
+  schema: z.object({
+    folder: z.enum(FOLDERS as [FolderKey, ...FolderKey[]]),
+    name: z.string().min(1).max(80).describe('The new folder name, one name only (no slashes)'),
+    subfolder: z.string().max(200).default('').describe('Optional existing folder inside it')
+  }),
+  async run({ folder, name, subfolder }, ctx) {
+    const problem = folderNameProblem(name)
+    if (problem) return { content: problem, isError: true, summary: 'Bad folder name' }
+    const parent = insideAllowed(ctx.platform, folder, subfolder)
+    if (!parent) return { content: 'That path is outside the allowed folders.', isError: true }
+    const target = insideAllowed(ctx.platform, folder, join(subfolder, name.trim()))
+    if (!target) return { content: 'That path is outside the allowed folders.', isError: true }
+    if (existsSync(target))
+      return {
+        content: `"${name.trim()}" already exists there, so nothing was changed.`,
+        summary: 'Already exists'
+      }
+    // Not recursive: the parent must already exist, so a typo can not build a deep tree.
+    await mkdir(target)
+    return { content: `Created ${target}.`, summary: `Created ${name.trim()}` }
+  }
+})
+
+const SKIP_DIRS = new Set(['node_modules', '.git', '$recycle.bin', 'appdata'])
+
+/** Looks for file or folder names containing the words, a few levels deep. Read-only and size-limited. */
+export async function searchNames(
+  roots: string[],
+  query: string,
+  limits = { depth: 4, visited: 4000, results: 15 }
+): Promise<{ found: string[]; truncated: boolean }> {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  const found: string[] = []
+  let visited = 0
+  let truncated = false
+  const walk = async (dir: string, depth: number): Promise<void> => {
+    if (found.length >= limits.results || visited >= limits.visited) {
+      truncated = true
+      return
+    }
+    let entries: import('node:fs').Dirent[]
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      if (found.length >= limits.results || ++visited > limits.visited) {
+        truncated = true
+        return
+      }
+      const lower = e.name.toLowerCase()
+      if (words.every((w) => lower.includes(w))) found.push(join(dir, e.name))
+      if (
+        e.isDirectory() &&
+        depth < limits.depth &&
+        !lower.startsWith('.') &&
+        !SKIP_DIRS.has(lower)
+      )
+        await walk(join(dir, e.name), depth + 1)
+    }
+  }
+  for (const r of roots) await walk(r, 0)
+  return { found, truncated }
+}
+
+export const findFile = defineTool({
+  name: 'find_file',
+  label: 'Finding a file',
+  description:
+    "Find files or folders by part of their name inside the user's own folders (desktop, documents, downloads, pictures, music, videos). Searches a few levels deep and returns up to 15 matches. Read-only.",
+  schema: z.object({
+    query: z.string().min(1).max(80).describe('Words in the name, e.g. "invoice" or "resume pdf"'),
+    folder: z
+      .enum(['all', ...FOLDERS] as ['all', ...FolderKey[]])
+      .default('all')
+      .describe('Where to look; "all" searches every allowed folder')
+  }),
+  async run({ query, folder }, ctx) {
+    const keys = folder === 'all' ? FOLDERS : [folder as FolderKey]
+    const roots = keys.map((k) => ctx.platform.folders[k])
+    const { found, truncated } = await searchNames([...new Set(roots)], query)
+    if (!found.length)
+      return {
+        content: `No file or folder with "${query}" in its name${truncated ? ' (searched part of the folders)' : ''}.`,
+        summary: 'No match'
+      }
+    return {
+      content: `Found ${found.length}${truncated ? ' (there may be more)' : ''}:\n${found.join('\n')}`,
+      summary: `Found ${found.length} match${found.length === 1 ? '' : 'es'}`
+    }
+  }
+})
+
 export const organizeDownloads = defineTool({
   name: 'organize_downloads',
   label: 'Organizing Downloads',

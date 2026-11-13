@@ -24,7 +24,15 @@ export function fakePlatform(os: NodeJS.Platform = 'win32') {
     openUrl: async (u) => void calls.push(`url:${u}`),
     openPath: async (p) => (calls.push(`path:${p}`), ''),
     launch: async (c) => void calls.push(`launch:${c}`),
-    notify: (t, b) => void calls.push(`notify:${t}:${b}`)
+    notify: (t, b) => void calls.push(`notify:${t}:${b}`),
+    closeProcess: async (image) => {
+      calls.push(`close:${image}`)
+      return 'closed'
+    },
+    pressEnter: async (app) => {
+      calls.push(`enter:${app}`)
+      return true
+    }
   }
   return { platform, calls, root }
 }

@@ -15,6 +15,16 @@ export interface Platform {
   /** Starts a program from Nova's fixed list (never text from the model). */
   launch(command: string): Promise<void>
   notify(title: string, body: string): void
+  /**
+   * Asks Windows to close a program by its process name (a graceful close, like clicking the X).
+   * The name always comes from Nova's fixed table, never from the model.
+   */
+  closeProcess(image: string): Promise<'closed' | 'not-running' | 'failed'>
+  /**
+   * Presses Enter in a chat app, but only once that app's window is really the one in front.
+   * Resolves false when it could not be sure, so nothing is typed into the wrong window.
+   */
+  pressEnter(app: 'whatsapp'): Promise<boolean>
 }
 
 export interface ToolContext {
@@ -24,6 +34,8 @@ export interface ToolContext {
   /** Asks the user in the window. Resolves true only if they click Allow. */
   confirm(title: string, detail: string): Promise<boolean>
   now(): Date
+  /** Web requests a tool makes. Tests pass a fake so nothing touches the network. */
+  fetch?: typeof fetch
 }
 
 export interface ToolResult {

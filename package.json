@@ -26,6 +26,7 @@
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "qrcode": "^1.5.4",
+    "selfsigned": "^5.5.0",
     "sql.js": "^1.15.2",
     "systeminformation": "^5.33.19",
     "zod": "^4.6.7"

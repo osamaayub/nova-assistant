@@ -1,22 +1,27 @@
-import { openApp } from './apps'
+import { closeApp, openApp } from './apps'
 import { readCodeFile, runProjectCheck, writeCodeFile } from './code'
-import { listFolder, openFolder, organizeDownloads } from './files'
+import { createFolder, findFile, listFolder, openFolder, organizeDownloads } from './files'
 import { forgetFact, rememberFact } from './memory'
 import { getDateTime, setTimer, systemStatus } from './system'
 import type { NovaTool } from './types'
-import { openWebsite, playMusic, readWebPage } from './web'
+import { openWebsite, playMusic, readWebPage, webSearch, whatsappMessage } from './web'
 
 /** Every tool Nova has. In team mode the specialists share them out (see team.ts). */
 export const TOOLS: NovaTool[] = [
   openApp,
+  closeApp,
   openWebsite,
   playMusic,
+  whatsappMessage,
+  webSearch,
   readWebPage,
   systemStatus,
   getDateTime,
   setTimer,
   listFolder,
   openFolder,
+  findFile,
+  createFolder,
   organizeDownloads,
   readCodeFile,
   writeCodeFile,

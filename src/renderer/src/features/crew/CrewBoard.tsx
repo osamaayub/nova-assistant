@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { Step } from '../chat/useAgent'
-import { crewFrom, elapsed, progress, ROLES } from './crew'
-
-const MARK: Record<Step['status'], string> = { running: '…', done: '✓', error: '!', declined: '–' }
+import { AgentStage } from './AgentStage'
+import { crewFrom, elapsed, progress } from './crew'
+import { WALK_MS } from './stage'
 
 /**
  * The agents at work. Appears as soon as a command is running: who is doing what, for how long,
@@ -14,7 +14,8 @@ export function CrewBoard({
   lead,
   command,
   startedAt,
-  endedAt
+  endedAt,
+  always = false
 }: {
   steps: Step[]
   busy: boolean
@@ -23,20 +24,26 @@ export function CrewBoard({
   command: string
   startedAt?: number
   endedAt?: number
+  /** Keep the office on screen even when nothing is happening (the wide screen's agent hub). */
+  always?: boolean
 }): React.JSX.Element | null {
   const [now, setNow] = useState(() => Date.now())
   const [collapsed, setCollapsed] = useState(false)
+  // Tick while working, and for a few seconds after, so the last agent can finish its walks.
   useEffect(() => {
-    if (!busy) return
-    const iv = setInterval(() => setNow(Date.now()), 500)
-    return () => clearInterval(iv)
+    const iv = setInterval(() => setNow(Date.now()), 400)
+    const stop = busy ? null : setTimeout(() => clearInterval(iv), WALK_MS * 2 + 600)
+    return () => {
+      clearInterval(iv)
+      if (stop) clearTimeout(stop)
+    }
   }, [busy])
 
   const crew = crewFrom(steps)
   const end = busy ? now : (endedAt ?? now)
   const total = startedAt ? end - startedAt : 0
   // A quick chat answer needs no board. Show it once real work starts, or if the wait gets long.
-  if (!crew.length && !(busy && total > 1500)) return null
+  if (!always && !crew.length && !(busy && total > 1500)) return null
 
   const working = crew.filter((c) => c.status === 'working')
   const leadLine = !busy
@@ -76,45 +83,16 @@ export function CrewBoard({
       >
         <div className={`crew-fill ${busy ? 'live' : ''}`} style={{ width: `${pct}%` }} />
       </div>
-      {!collapsed && (
-        <ul className="crew-cards">
-          {!crew.length && (
-            <li className="crew-card placeholder" aria-hidden="true">
-              <div className="crew-head">
-                <span className="crew-dot on pulse" />
-                <strong>Choosing agents…</strong>
-              </div>
-              <div className="crew-role">Picking the right ones for the job</div>
-            </li>
-          )}
-          {crew.map((c) => (
-            <li
-              key={c.name}
-              className={`crew-card ${c.status}`}
-              style={{ '--agent': ROLES[c.name].color } as React.CSSProperties}
-            >
-              <div className="crew-head">
-                <span className={`crew-dot on ${c.status === 'working' ? 'pulse' : ''}`} />
-                <strong>{c.name.replace(' agent', '')}</strong>
-                <span className="crew-state">
-                  {c.status === 'working' ? 'Working' : c.status === 'failed' ? 'Stuck' : 'Done'}
-                </span>
-              </div>
-              <div className="crew-role">
-                {ROLES[c.name].role} · {elapsed((c.endedAt ?? now) - c.startedAt)}
-              </div>
-              <ul className="crew-feed">
-                {c.feed.length === 0 && <li className="running">Getting started…</li>}
-                {c.feed.slice(-3).map((f) => (
-                  <li key={f.id} className={f.status} title={f.text}>
-                    <span>{MARK[f.status]}</span> {f.text}
-                  </li>
-                ))}
-              </ul>
-            </li>
-          ))}
-        </ul>
-      )}
+      {!collapsed && <AgentStage crew={crew} now={now} busy={busy} lead={lead} />}
+      <ul className="sr-only">
+        {crew.map((c) => (
+          <li key={c.name}>
+            {c.name}:{' '}
+            {c.status === 'working' ? 'working' : c.status === 'failed' ? 'stuck' : 'done'}.{' '}
+            {c.line}
+          </li>
+        ))}
+      </ul>
     </section>
   )
 }

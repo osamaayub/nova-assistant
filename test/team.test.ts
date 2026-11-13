@@ -60,8 +60,10 @@ describe('team of agents', () => {
     // The PC agent only saw its own tools; the main agent only saw hand-over and memory tools.
     expect(seen[1].tools.map((t) => t.name)).toEqual([
       'open_app',
+      'close_app',
       'open_website',
       'play_music',
+      'whatsapp_message',
       'system_status',
       'set_timer',
       'get_datetime'
@@ -114,10 +116,13 @@ describe('team of agents', () => {
     expect(tester.tools.map((t) => t.name)).toContain('run_project_check')
   })
 
-  it('tells the research agent what it can and cannot do', () => {
+  it('tells the research agent how to search on each brain', () => {
     const r = SPECIALISTS.find((s) => s.id === 'research')!
+    expect(r.tools.map((t) => t.name)).toEqual(['web_search', 'read_web_page', 'get_datetime'])
     expect(specialistPrompt(r, true)).toMatch(/can search the web/)
-    expect(specialistPrompt(r, false)).toMatch(/cannot search the web/)
+    // A brain without built-in search uses the keyless search tool instead.
+    expect(specialistPrompt(r, false)).toMatch(/Use web_search/)
+    expect(specialistPrompt(r, false)).not.toMatch(/cannot search/)
   })
 
   it('requires specialists to report evidence and unresolved work', () => {

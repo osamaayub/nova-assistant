@@ -1,5 +1,9 @@
 import type { Step } from '../chat/useAgent'
 
+/** Small things a character wears, so the agents are easy to tell apart. */
+export type Hat =
+  'cap' | 'visor' | 'glasses' | 'helmet' | 'headset' | 'antenna' | 'bun' | 'bow' | 'crown'
+
 export type CrewStatus = 'working' | 'done' | 'failed'
 export type FeedLine = { id: string; text: string; status: Step['status'] }
 export type CrewCard = {
@@ -16,15 +20,35 @@ export type CrewCard = {
 }
 
 /** Roles shown on the board: a short job title and an accent color for each specialist. */
-export const ROLES: Record<string, { role: string; color: string }> = {
-  'PC agent': { role: 'Apps, music, PC health', color: '#7dd3fc' },
-  'Files agent': { role: 'Folders and tidying', color: '#fcd34d' },
-  'Research agent': { role: 'Facts from the web', color: '#86efac' },
-  'Architect agent': { role: 'Plans the work', color: '#c4b5fd' },
-  'Developer agent': { role: 'Makes the changes', color: '#fda4af' },
-  'Reviewer agent': { role: 'Checks for problems', color: '#fdba74' },
-  'Tester agent': { role: 'Runs the checks', color: '#5eead4' },
-  'Connectors agent': { role: 'Calendar, email, more', color: '#f0abfc' }
+export const ROLES: Record<string, { role: string; color: string; icon: string; hat: Hat }> = {
+  'PC agent': { role: 'Apps, music, PC health', color: '#7dd3fc', icon: 'pc', hat: 'cap' },
+  'Files agent': { role: 'Folders and tidying', color: '#fcd34d', icon: 'files', hat: 'visor' },
+  'Research agent': {
+    role: 'Facts from the web',
+    color: '#86efac',
+    icon: 'research',
+    hat: 'glasses'
+  },
+  'Architect agent': { role: 'Plans the work', color: '#c4b5fd', icon: 'architect', hat: 'helmet' },
+  'Developer agent': {
+    role: 'Makes the changes',
+    color: '#fda4af',
+    icon: 'developer',
+    hat: 'headset'
+  },
+  'Reviewer agent': {
+    role: 'Checks for problems',
+    color: '#fdba74',
+    icon: 'reviewer',
+    hat: 'antenna'
+  },
+  'Tester agent': { role: 'Runs the checks', color: '#5eead4', icon: 'tester', hat: 'bun' },
+  'Connectors agent': {
+    role: 'Calendar, email, more',
+    color: '#f0abfc',
+    icon: 'connectors',
+    hat: 'bow'
+  }
 }
 
 const nameIn = (label: string): string | undefined =>

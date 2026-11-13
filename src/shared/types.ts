@@ -1,6 +1,8 @@
 /** Types shared by the main process (Node) and the window (React). No runtime code here. */
 
 export type CharacterId = 'nova' | 'jarvis' | 'mentor' | 'friend' | 'custom'
+/** The look and voice of the assistant: the plain orb, or a particle figure. */
+export type AvatarId = 'core' | 'female' | 'male'
 export type VoiceEngine = 'system' | 'kokoro'
 export type ModelId = 'claude-haiku-5-5' | 'claude-sonnet-5-5' | 'claude-opus-5-5'
 export type ProviderId = 'claude' | 'ollama' | 'flm'
@@ -27,6 +29,7 @@ export interface Settings {
   ollamaModel: string
   agentMode: AgentMode
   character: CharacterId
+  avatar: AvatarId
   customName: string
   customPersonality: string
   userName: string

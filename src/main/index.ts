@@ -5,6 +5,7 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  screen,
   session,
   shell,
   Tray
@@ -30,9 +31,11 @@ let quitting = false
 let remote: RemoteManager | null = null
 
 function createWindow(): BrowserWindow {
+  // Big enough for the command center, but never bigger than the screen.
+  const area = screen.getPrimaryDisplay().workAreaSize
   const w = new BrowserWindow({
-    width: 460,
-    height: 760,
+    width: Math.min(1180, area.width - 32),
+    height: Math.min(800, area.height - 32),
     minWidth: 380,
     minHeight: 560,
     show: false,

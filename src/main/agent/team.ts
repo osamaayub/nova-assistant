@@ -1,11 +1,11 @@
 import { z } from 'zod'
-import { openApp } from './tools/apps'
+import { closeApp, openApp } from './tools/apps'
 import { readCodeFile, runProjectCheck, writeCodeFile } from './tools/code'
-import { listFolder, openFolder, organizeDownloads } from './tools/files'
+import { createFolder, findFile, listFolder, openFolder, organizeDownloads } from './tools/files'
 import { forgetFact, rememberFact } from './tools/memory'
 import { getDateTime, setTimer, systemStatus } from './tools/system'
 import { defineTool, type NovaTool } from './tools/types'
-import { openWebsite, playMusic, readWebPage } from './tools/web'
+import { openWebsite, playMusic, readWebPage, webSearch, whatsappMessage } from './tools/web'
 
 /**
  * Nova works as a small team. The main agent talks to you and decides who should do the job;
@@ -28,21 +28,30 @@ export const SPECIALISTS: Specialist[] = [
     id: 'pc',
     name: 'PC agent',
     tool: 'ask_pc_agent',
-    when: 'opening apps or websites, playing music, checking how the PC is doing, timers and reminders',
-    tools: [openApp, openWebsite, playMusic, systemStatus, setTimer, getDateTime],
+    when: 'opening or closing apps, opening websites, playing music or a video, sending a WhatsApp message, checking how the PC is doing, timers and reminders',
+    tools: [
+      openApp,
+      closeApp,
+      openWebsite,
+      playMusic,
+      whatsappMessage,
+      systemStatus,
+      setTimer,
+      getDateTime
+    ],
     webSearch: false,
     instructions:
-      'You are the PC agent. You control apps, websites, music, timers and system checks on a Windows PC.'
+      'You are the PC agent. You open and close apps, open websites, play music and videos, send WhatsApp messages, set timers and check the PC on Windows. Send a WhatsApp message only after the user gave you the number and the text. Say it was sent only if the tool result says sent; if it says it was not sent, tell the user to press Send.'
   },
   {
     id: 'files',
     name: 'Files agent',
     tool: 'ask_files_agent',
-    when: "looking in or opening the user's folders, and tidying Downloads",
-    tools: [listFolder, openFolder, organizeDownloads],
+    when: "looking in, finding files in, creating or opening the user's folders, and tidying Downloads",
+    tools: [listFolder, openFolder, findFile, createFolder, organizeDownloads],
     webSearch: false,
     instructions:
-      "You are the Files agent. You look in and organize the user's own folders. You never delete anything."
+      "You are the Files agent. You look in, find files in, create and organize the user's own folders. You never delete or overwrite anything."
   },
   {
     id: 'architect',
@@ -72,7 +81,7 @@ export const SPECIALISTS: Specialist[] = [
     tools: [listFolder, readCodeFile],
     webSearch: false,
     instructions:
-      "You are the Reviewer agent. You review code read-only for correctness, security, edge cases and clarity. You never edit files. Report concrete findings with file and line references, ordered by severity."
+      'You are the Reviewer agent. You review code read-only for correctness, security, edge cases and clarity. You never edit files. Report concrete findings with file and line references, ordered by severity.'
   },
   {
     id: 'tester',
@@ -82,17 +91,17 @@ export const SPECIALISTS: Specialist[] = [
     tools: [listFolder, readCodeFile, runProjectCheck],
     webSearch: false,
     instructions:
-      "You are the Tester agent. You run only the fixed project checks after approval and read the output. You never edit files or run arbitrary commands. Report pass or fail with the useful error details."
+      'You are the Tester agent. You run only the fixed project checks after approval and read the output. You never edit files or run arbitrary commands. Report pass or fail with the useful error details.'
   },
   {
     id: 'research',
     name: 'Research agent',
     tool: 'ask_research_agent',
     when: 'questions that need current or exact facts from the web',
-    tools: [readWebPage, getDateTime],
+    tools: [webSearch, readWebPage, getDateTime],
     webSearch: true,
     instructions:
-      'You are the Research agent. You find current, accurate information. Prefer official sources. If you cannot search the web (local model) and have no page address to read, say that web search needs the Claude brain.'
+      'You are the Research agent. You find current, accurate information. Search with web_search, then read the best one or two results with read_web_page before you answer. Prefer official sources. If the search service does not answer, say so plainly.'
   }
 ]
 
@@ -114,7 +123,7 @@ export function specialistPrompt(s: Specialist, canSearch: boolean): string {
   return `${s.instructions}
 The main assistant (Nova) gave you one task with the context and constraints you need. Stay within your role and use only your tools. Do the task, then report in one to three plain sentences what you completed or found, the evidence from your tools, and any failure, uncertainty, or remaining step. Your reply goes to Nova, not to the user.
 Never claim you did something unless a tool result says it worked. If something failed or you could not verify it, say what and why.
-${s.id === 'research' ? (canSearch ? 'You can search the web. End with the source addresses you used.' : 'You cannot search the web on this brain. You can only read pages whose address you know.') : ''}`.trim()
+${s.id === 'research' ? (canSearch ? 'You can search the web. End with the source addresses you used.' : 'Use web_search to find pages and read_web_page to read them. End with the source addresses you used.') : ''}`.trim()
 }
 
 /** The tools the main agent gets: hand-over tools for each specialist plus memory, or every tool in single mode. */
