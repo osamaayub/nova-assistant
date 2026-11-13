@@ -48,8 +48,28 @@ describe('system prompt', () => {
     )
     expect(p).toMatch(/You are Nova/)
     expect(p).toMatch(/No markdown/)
+    expect(p).toMatch(/Talk naturally, respond to the user's tone/)
+    expect(p).toMatch(/without pretending to have human feelings/)
     expect(p).toMatch(/spotify/)
     expect(p).toMatch(/- Likes tea/)
     expect(p).toMatch(/name is Osama/)
+  })
+
+  it('gives the team coordinator a clear handoff and result-checking protocol', () => {
+    const p = buildSystemPrompt(
+      DEFAULT_SETTINGS,
+      [],
+      new Date('2026-11-08T10:00:00Z'),
+      'win32',
+      {
+        mode: 'team',
+        canSearch: false,
+        team: [{ tool: 'ask_files_agent', name: 'Files agent', when: 'organizing files' }]
+      }
+    )
+    expect(p).toMatch(/For dependent tasks, wait for the first report/)
+    expect(p).toMatch(/include the user's intent, needed constraints/)
+    expect(p).toMatch(/Only report actions as successful when the specialist confirms/)
+    expect(p).toMatch(/Only you speak to the user/)
   })
 })

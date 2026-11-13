@@ -19,6 +19,11 @@ const api: NovaApi = {
   listFacts: () => ipcRenderer.invoke('memory:list'),
   deleteFact: (id) => ipcRenderer.invoke('memory:delete', id),
   checkOllama: (url) => ipcRenderer.invoke('ollama:check', url),
+  listMcp: () => ipcRenderer.invoke('mcp:list'),
+  reconnectMcp: () => ipcRenderer.invoke('mcp:reconnect'),
+  showWindow: () => ipcRenderer.invoke('window:show'),
+  headlines: () => ipcRenderer.invoke('news:headlines'),
+  openLink: (url) => ipcRenderer.invoke('shell:open', url),
   platform: process.platform
 }
 

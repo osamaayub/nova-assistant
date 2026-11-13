@@ -5,11 +5,22 @@ import { WorkerClient } from './workerClient'
 export class Listener {
   private recorder: Recorder | null = null
   private whisper: WorkerClient<{ text: string }> | null = null
+  private lastVoice = 0
 
   constructor(
     private onLevel: (level: number) => void,
     private onProgress: (p: number | null) => void
   ) {}
+
+  /** When the mic last heard something loud. The wake-word flow uses it to detect silence. */
+  get lastVoiceAt(): number {
+    return this.lastVoice
+  }
+
+  private level(level: number): void {
+    if (level > 0.06) this.lastVoice = Date.now()
+    this.onLevel(level)
+  }
 
   private client(): WorkerClient<{ text: string }> {
     this.whisper ??= new WorkerClient<{ text: string }>(
@@ -29,26 +40,32 @@ export class Listener {
   }
 
   async start(): Promise<void> {
+    this.lastVoice = 0
     this.recorder?.cancel()
     this.recorder = new Recorder()
-    await this.recorder.start(this.onLevel)
+    await this.recorder.start((l) => this.level(l))
   }
 
-  async finish(): Promise<string> {
-    const rec = this.recorder
-    this.recorder = null
-    this.onLevel(0)
-    if (!rec) return ''
-    const audio = await rec.stop()
-    if (!audio) return ''
+  /** Turns 16 kHz mono samples into words. Shared with the wake-word listener. */
+  async transcribe(audio: Float32Array): Promise<string> {
     const { text } = await this.client().run({ audio }, [audio.buffer])
     // Whisper writes non-speech as "[BLANK_AUDIO]" or "(music)".
     return text.replace(/\[[^\]]*\]|\([^)]*\)/g, '').trim()
   }
 
+  async finish(): Promise<string> {
+    const rec = this.recorder
+    this.recorder = null
+    this.level(0)
+    if (!rec) return ''
+    const audio = await rec.stop()
+    if (!audio) return ''
+    return this.transcribe(audio)
+  }
+
   cancel(): void {
     this.recorder?.cancel()
     this.recorder = null
-    this.onLevel(0)
+    this.level(0)
   }
 }

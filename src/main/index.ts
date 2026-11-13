@@ -1,15 +1,30 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, session, shell } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  globalShortcut,
+  ipcMain,
+  Menu,
+  nativeImage,
+  session,
+  shell,
+  Tray
+} from 'electron'
 import { join } from 'node:path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+import trayIcon from '../../build/icon.ico?asset'
 import type { AgentEvent, Settings } from '../shared/types'
 import { AgentService } from './agent/service'
+import { fetchHeadlines } from './news'
+import { McpManager } from './mcp/manager'
 import { MemoryStore } from './memory/store'
 import { createPlatform } from './platform'
 import { listOllamaModels } from './agent/providers/ollama'
-import { clearApiKey, publicSettings, saveApiKey, saveSettings } from './settings/store'
+import { clearApiKey, getSettings, publicSettings, saveApiKey, saveSettings } from './settings/store'
 
 let win: BrowserWindow | null = null
+let tray: Tray | null = null
+let quitting = false
 
 function createWindow(): BrowserWindow {
   const w = new BrowserWindow({
@@ -30,6 +45,12 @@ function createWindow(): BrowserWindow {
     }
   })
   w.on('ready-to-show', () => w.show())
+  // Closing hides Nova to the tray; it keeps listening for the wake word. Quit is in the tray menu.
+  w.on('close', (e) => {
+    if (quitting) return
+    e.preventDefault()
+    w.hide()
+  })
   // Links in replies open in the real browser, never inside Nova.
   w.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) shell.openExternal(url)
@@ -42,11 +63,57 @@ function createWindow(): BrowserWindow {
   return w
 }
 
+function showWindow(): void {
+  if (!win) return
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+}
+
+function applyAutostart(settings: Settings): void {
+  if (process.platform === 'win32' || process.platform === 'darwin')
+    app.setLoginItemSettings({ openAtLogin: settings.startWithWindows })
+}
+
+function buildTrayMenu(): Menu {
+  return Menu.buildFromTemplate([
+    { label: 'Open Nova', click: showWindow },
+    {
+      label: 'Start with Windows',
+      type: 'checkbox',
+      checked: getSettings().startWithWindows,
+      click: (item) => {
+        saveSettings({ startWithWindows: item.checked })
+        applyAutostart(getSettings())
+      }
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit Nova',
+      click: () => {
+        quitting = true
+        app.quit()
+      }
+    }
+  ])
+}
+
+function createTray(): void {
+  // A bad icon must never take the app down with it.
+  let img = nativeImage.createFromPath(trayIcon)
+  if (img.isEmpty()) img = nativeImage.createFromPath(icon)
+  if (img.isEmpty()) return
+  tray = new Tray(img.resize({ width: 16, height: 16 }))
+  tray.setToolTip('Nova')
+  tray.setContextMenu(buildTrayMenu())
+  tray.on('click', showWindow)
+}
+
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('dev.osamaayub.nova')
   app.on('browser-window-created', (_, w) => optimizer.watchWindowShortcuts(w))
 
-  // Nova only ever needs the microphone (push to talk). Everything else is refused.
+  // Nova only ever needs the microphone (push to talk and the wake word). Everything else is refused.
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback, details) => {
     const audioOnly =
       permission === 'media' &&
@@ -64,7 +131,10 @@ app.whenReady().then(async () => {
     original(title, body)
     emit({ type: 'notify', title, body })
   })(platform.notify)
-  const agent = new AgentService(platform, memory, emit)
+
+  const mcp = new McpManager()
+  mcp.sync(getSettings().mcpServers)
+  const agent = new AgentService(platform, memory, emit, undefined, mcp)
 
   ipcMain.handle('agent:send', (_e, text: unknown) => agent.send(String(text ?? '')))
   ipcMain.handle('agent:stop', () => agent.stop())
@@ -74,7 +144,14 @@ app.whenReady().then(async () => {
   )
   ipcMain.handle('settings:get', () => publicSettings())
   ipcMain.handle('settings:save', (_e, patch: Partial<Settings>) => {
-    saveSettings(patch && typeof patch === 'object' ? patch : {})
+    const next = saveSettings(patch && typeof patch === 'object' ? patch : {})
+    try {
+      applyAutostart(next)
+    } catch {
+      /* ignore */
+    }
+    mcp.sync(next.mcpServers)
+    tray?.setContextMenu(buildTrayMenu())
     return publicSettings()
   })
   ipcMain.handle('settings:key', (_e, key: unknown) => {
@@ -103,25 +180,46 @@ app.whenReady().then(async () => {
     memory.remove(Number(id))
     return memory.list()
   })
+  ipcMain.handle('mcp:list', () => mcp.status())
+  ipcMain.handle('mcp:reconnect', () => mcp.reconnect())
+  ipcMain.handle('window:show', showWindow)
+  ipcMain.handle('news:headlines', () => fetchHeadlines())
+  ipcMain.handle('shell:open', (_e, url: unknown) => {
+    const u = String(url ?? '')
+    if (!/^https?:\/\//.test(u)) return
+    return shell.openExternal(u)
+  })
 
   win = createWindow()
+  try {
+    createTray()
+  } catch {
+    tray = null // no tray is better than no app
+  }
+  try {
+    applyAutostart(getSettings())
+  } catch {
+    /* autostart is a nicety, not a requirement */
+  }
 
   // Alt+Space shows or hides Nova from anywhere.
   globalShortcut.register('Alt+Space', () => {
     if (!win) return
     if (win.isVisible() && win.isFocused()) win.hide()
-    else {
-      win.show()
-      win.focus()
-    }
+    else showWindow()
   })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) win = createWindow()
+    else showWindow()
   })
 })
 
-app.on('will-quit', () => globalShortcut.unregisterAll())
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
+  tray?.destroy()
+})
 app.on('window-all-closed', () => {
+  // The close button hides to the tray instead, so this only runs on a real quit.
   if (process.platform !== 'darwin') app.quit()
 })

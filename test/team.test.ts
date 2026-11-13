@@ -69,6 +69,10 @@ describe('team of agents', () => {
     expect(seen[0].tools.map((t) => t.name)).toEqual([
       'ask_pc_agent',
       'ask_files_agent',
+      'ask_architect_agent',
+      'ask_developer_agent',
+      'ask_reviewer_agent',
+      'ask_tester_agent',
       'ask_research_agent',
       'remember_fact',
       'forget_fact',
@@ -98,10 +102,29 @@ describe('team of agents', () => {
     expect(new Set(names).size).toBe(names.length)
   })
 
+  it('splits coding into architect, developer, reviewer and tester', () => {
+    const ids = SPECIALISTS.map((s) => s.id)
+    for (const id of ['architect', 'developer', 'reviewer', 'tester'] as const) expect(ids).toContain(id)
+    const dev = SPECIALISTS.find((s) => s.id === 'developer')!
+    const rev = SPECIALISTS.find((s) => s.id === 'reviewer')!
+    const tester = SPECIALISTS.find((s) => s.id === 'tester')!
+    expect(dev.tools.map((t) => t.name)).toContain('write_code_file')
+    expect(rev.tools.map((t) => t.name)).not.toContain('write_code_file')
+    expect(rev.tools.map((t) => t.name)).not.toContain('run_project_check')
+    expect(tester.tools.map((t) => t.name)).toContain('run_project_check')
+  })
+
   it('tells the research agent what it can and cannot do', () => {
     const r = SPECIALISTS.find((s) => s.id === 'research')!
     expect(specialistPrompt(r, true)).toMatch(/can search the web/)
     expect(specialistPrompt(r, false)).toMatch(/cannot search the web/)
+  })
+
+  it('requires specialists to report evidence and unresolved work', () => {
+    const prompt = specialistPrompt(SPECIALISTS[0], false)
+    expect(prompt).toMatch(/Stay within your role and use only your tools/)
+    expect(prompt).toMatch(/evidence from your tools/)
+    expect(prompt).toMatch(/failure, uncertainty, or remaining step/)
   })
 })
 

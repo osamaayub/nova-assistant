@@ -1,5 +1,13 @@
 import { useEffect, useState } from 'react'
-import type { CharacterId, Fact, ModelId, PublicSettings, Settings } from '../../../../shared/types'
+import type {
+  CharacterId,
+  Fact,
+  McpServerConfig,
+  McpServerStatus,
+  ModelId,
+  PublicSettings,
+  Settings
+} from '../../../../shared/types'
 import { nova } from '../../lib/api'
 import { KOKORO_VOICES, systemVoices } from '../voice/speaker'
 
@@ -33,6 +41,10 @@ export function SettingsPanel({
   const [ollama, setOllama] = useState<{ checking?: boolean; models?: string[]; error?: string }>(
     {}
   )
+  const [mcp, setMcp] = useState<McpServerStatus[]>([])
+  const [mcpForm, setMcpForm] = useState({ name: '', command: '', args: '' })
+
+  const refreshMcp = (): void => void nova.listMcp().then(setMcp)
 
   const checkOllama = async (): Promise<void> => {
     setOllama({ checking: true })
@@ -43,10 +55,28 @@ export function SettingsPanel({
   useEffect(() => {
     void systemVoices().then((v) => setVoices(v.filter((x) => x.lang.startsWith('en'))))
     void nova.listFacts().then(setFacts)
+    void refreshMcp()
   }, [])
 
   const save = async (patch: Partial<Settings>): Promise<void> =>
     onChange(await nova.saveSettings(patch))
+
+  const saveMcp = async (servers: McpServerConfig[]): Promise<void> => {
+    onChange(await nova.saveSettings({ mcpServers: servers }))
+    // Give the manager a moment to start the new processes, then show real status.
+    setTimeout(() => void refreshMcp(), 800)
+  }
+
+  const addMcp = async (): Promise<void> => {
+    const server: McpServerConfig = {
+      name: mcpForm.name.trim(),
+      command: mcpForm.command.trim(),
+      args: mcpForm.args.trim() ? mcpForm.args.trim().split(/\s+/) : [],
+      env: {}
+    }
+    await saveMcp([...settings.mcpServers, server])
+    setMcpForm({ name: '', command: '', args: '' })
+  }
 
   const saveKey = async (): Promise<void> => {
     try {
@@ -83,6 +113,14 @@ export function SettingsPanel({
             onClick={() => save({ provider: 'ollama' })}
           >
             Free local AI (Ollama)
+          </button>
+          <button
+            className={`chip ${settings.provider === 'flm' ? 'on' : ''}`}
+            role="radio"
+            aria-checked={settings.provider === 'flm'}
+            onClick={() => save({ provider: 'flm' })}
+          >
+            Free cloud (no key)
           </button>
           <button
             className={`chip ${settings.provider === 'claude' ? 'on' : ''}`}
@@ -162,6 +200,13 @@ export function SettingsPanel({
               PCs.
             </p>
           </>
+        ) : settings.provider === 'flm' ? (
+          <>
+            <p className="hint" style={{ marginTop: 10 }}>
+              No key and no Ollama. Uses api.jarvisclaw.ai, a free hosted API, so your chats go to
+              that service. Free per-IP limits apply.
+            </p>
+          </>
         ) : (
           <>
             <p className="hint" style={{ marginTop: 10 }}>
@@ -220,8 +265,9 @@ export function SettingsPanel({
             onChange={(e) => save({ agentMode: e.target.checked ? 'team' : 'single' })}
           />
           <span>
-            Team of agents. Nova hands jobs to a PC agent, a Files agent and a Research agent.
-            Better at multi-step requests; turn off for quicker single commands.
+            Team of agents. Nova hands jobs to PC, Files, Research and a coding crew: Architect,
+            Developer, Reviewer and Tester. Better at multi-step requests; turn off for quicker
+            single commands.
           </span>
         </label>
       </section>
@@ -332,6 +378,101 @@ export function SettingsPanel({
           Hold Space (or the mic button) to talk. Speech is turned into text on your PC with Whisper
           (80 MB download once).
         </p>
+      </section>
+
+      <section>
+        <h3>Always on</h3>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={settings.wakeWord}
+            onChange={(e) => save({ wakeWord: e.target.checked })}
+          />
+          <span>
+            Wake word. Say <strong>&quot;Hey Nova&quot;</strong> from anywhere, then your command.
+            Uses the microphone constantly, so it costs some battery.
+          </span>
+        </label>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={settings.startWithWindows}
+            onChange={(e) => save({ startWithWindows: e.target.checked })}
+          />
+          Start with Windows. Nova also lives in the system tray; closing the window keeps it
+          running.
+        </label>
+      </section>
+
+      <section>
+        <h3>Connectors (MCP)</h3>
+        <p className="hint">
+          Connect external apps Nova can use, like a calendar or email server. Each server is a
+          program that speaks MCP over stdio, for example{' '}
+          <code>npx -y @modelcontextprotocol/server-filesystem C:\Users\You\Documents</code>.
+          Anything that changes data asks you first.
+        </p>
+        {settings.mcpServers.map((s) => {
+          const st = mcp.find((m) => m.name === s.name)
+          return (
+            <div key={s.name} className="list-row">
+              <span>
+                <strong>{s.name}</strong>{' '}
+                <small>
+                  {st?.state === 'connected'
+                    ? `${st.tools.length} tool${st.tools.length === 1 ? '' : 's'}`
+                    : st?.state === 'connecting'
+                      ? 'connecting…'
+                      : (st?.error ?? 'not connected')}
+                </small>
+              </span>
+              <button
+                className="icon-btn"
+                aria-label={`Remove ${s.name}`}
+                onClick={() =>
+                  saveMcp(settings.mcpServers.filter((x) => x.name !== s.name))
+                }
+              >
+                ✕
+              </button>
+            </div>
+          )
+        })}
+        {settings.mcpServers.some((s) => mcp.find((m) => m.name === s.name)?.state === 'error') && (
+          <button className="link" onClick={async () => setMcp(await nova.reconnectMcp())}>
+            Retry failed servers
+          </button>
+        )}
+        <div className="row">
+          <input
+            placeholder="Name (e.g. calendar)"
+            value={mcpForm.name}
+            maxLength={40}
+            onChange={(e) => setMcpForm({ ...mcpForm, name: e.target.value })}
+            aria-label="Connector name"
+          />
+          <input
+            placeholder="Command (e.g. npx)"
+            value={mcpForm.command}
+            onChange={(e) => setMcpForm({ ...mcpForm, command: e.target.value })}
+            aria-label="Connector command"
+            spellCheck={false}
+          />
+          <input
+            placeholder="Args (space separated)"
+            value={mcpForm.args}
+            onChange={(e) => setMcpForm({ ...mcpForm, args: e.target.value })}
+            aria-label="Connector arguments"
+            spellCheck={false}
+          />
+          <button
+            className="btn"
+            disabled={!mcpForm.name.trim() || !mcpForm.command.trim()}
+            onClick={addMcp}
+          >
+            Add
+          </button>
+        </div>
       </section>
 
       <section>

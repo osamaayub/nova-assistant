@@ -3,9 +3,11 @@ import type { AgentEvent, CharacterId, PublicSettings } from '../../shared/types
 import { Transcript } from './features/chat/Transcript'
 import { useAgentState } from './features/chat/useAgent'
 import { Orb, type OrbState } from './features/orb/Orb'
+import { Monitor } from './features/monitor/Monitor'
 import { SettingsPanel } from './features/settings/SettingsPanel'
 import { Listener } from './features/voice/listener'
 import { Speaker } from './features/voice/speaker'
+import { WakeListener } from './features/voice/wakeWord'
 import { nova } from './lib/api'
 import { SentenceSplitter } from './lib/sentences'
 
@@ -28,6 +30,7 @@ const NAMES: Record<Exclude<CharacterId, 'custom'>, string> = {
 export default function App(): React.JSX.Element {
   const [settings, setSettings] = useState<PublicSettings | null>(null)
   const [panel, setPanel] = useState(false)
+  const [monitor, setMonitor] = useState(false)
   const [text, setText] = useState('')
   const [listening, setListening] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
@@ -55,6 +58,7 @@ export default function App(): React.JSX.Element {
       ),
     []
   )
+  const wakeRef = useRef<WakeListener | null>(null)
 
   useEffect(() => {
     void nova.getSettings().then(setSettings)
@@ -124,6 +128,65 @@ export default function App(): React.JSX.Element {
       setTranscribing(false)
     }
   }, [listener, listening, send])
+
+  // "Hey Nova": capture the command that follows the wake phrase, then send it.
+  const captureCommand = useCallback(async () => {
+    setMicError('')
+    speaker.stop()
+    try {
+      await listener.start()
+      setListening(true)
+      const t0 = Date.now()
+      await new Promise<void>((resolve) => {
+        const iv = setInterval(() => {
+          // Wait for the first sound, then end 1.5 s after the voice stops. Hard cap: 12 s.
+          const heard =
+            listener.lastVoiceAt > 0 && Date.now() - listener.lastVoiceAt > 1500
+          if ((heard && Date.now() - t0 > 800) || Date.now() - t0 > 12000) {
+            clearInterval(iv)
+            resolve()
+          }
+        }, 200)
+      })
+      setListening(false)
+      setTranscribing(true)
+      const words = await listener.finish()
+      if (words) send(words)
+    } catch {
+      setMicError(
+        'Nova could not use the microphone. Check Windows Settings > Privacy > Microphone.'
+      )
+    } finally {
+      setListening(false)
+      setTranscribing(false)
+    }
+  }, [listener, send, speaker])
+
+  // Always-listening wake word. It pauses during push-to-talk and while Settings is open.
+  useEffect(() => {
+    if (!settings?.wakeWord || listening || panel || transcribing) {
+      wakeRef.current?.stop()
+      wakeRef.current = null
+      return
+    }
+    const wake = new WakeListener(
+      (audio) => listener.transcribe(audio),
+      (command) => {
+        void nova.showWindow()
+        if (command) send(command)
+        else void captureCommand()
+      },
+      setLevel
+    )
+    wakeRef.current = wake
+    wake
+      .start()
+      .catch(() => setMicError('Wake word needs the microphone. Check Windows privacy settings.'))
+    return () => {
+      wake.stop()
+      if (wakeRef.current === wake) wakeRef.current = null
+    }
+  }, [settings?.wakeWord, listening, panel, transcribing, listener, send, captureCommand])
 
   // Hold Space to talk (when not typing), Esc to stop.
   useEffect(() => {
@@ -195,6 +258,14 @@ export default function App(): React.JSX.Element {
           </p>
         </div>
         <div className="top-actions">
+          <button
+            className="icon-btn"
+            onClick={() => setMonitor(true)}
+            aria-label="World monitor"
+            title="World monitor"
+          >
+            ◉
+          </button>
           <button
             className="icon-btn"
             onClick={() => {
@@ -325,6 +396,7 @@ export default function App(): React.JSX.Element {
         )}
       </form>
 
+      {monitor && <Monitor onClose={() => setMonitor(false)} />}
       {panel && (
         <SettingsPanel settings={settings} onChange={setSettings} onClose={() => setPanel(false)} />
       )}

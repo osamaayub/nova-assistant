@@ -1,4 +1,5 @@
 import { openApp } from './apps'
+import { readCodeFile, runProjectCheck, writeCodeFile } from './code'
 import { listFolder, openFolder, organizeDownloads } from './files'
 import { forgetFact, rememberFact } from './memory'
 import { getDateTime, setTimer, systemStatus } from './system'
@@ -17,6 +18,9 @@ export const TOOLS: NovaTool[] = [
   listFolder,
   openFolder,
   organizeDownloads,
+  readCodeFile,
+  writeCodeFile,
+  runProjectCheck,
   rememberFact,
   forgetFact
 ] as NovaTool[]

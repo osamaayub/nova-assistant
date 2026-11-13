@@ -21,6 +21,9 @@ function browserFake(): NovaApi {
     speakReplies: false,
     webSearch: true,
     customApps: [],
+    startWithWindows: false,
+    wakeWord: false,
+    mcpServers: [],
     hasApiKey: true,
     keyStorage: 'encrypted'
   }
@@ -130,6 +133,44 @@ function browserFake(): NovaApi {
     },
     async checkOllama() {
       return { ok: true as const, models: ['qwen3:8b', 'llama3.1:8b'] }
+    },
+    async listMcp() {
+      return settings.mcpServers.map((s) => ({
+        name: s.name,
+        state: 'connected' as const,
+        tools: ['preview']
+      }))
+    },
+    async reconnectMcp() {
+      return this.listMcp()
+    },
+    async showWindow() {
+      // The preview is already visible.
+    },
+    async headlines() {
+      return [
+        {
+          title: 'Global markets steady as central banks signal steady rates',
+          url: 'https://example.com/1',
+          source: 'BBC World',
+          at: Date.now() - 3600_000
+        },
+        {
+          title: 'Breakthrough in battery research promises week-long phone charge',
+          url: 'https://example.com/2',
+          source: 'NPR',
+          at: Date.now() - 7200_000
+        },
+        {
+          title: 'Champions League finalists revealed after dramatic semi-finals',
+          url: 'https://example.com/3',
+          source: 'The Guardian',
+          at: Date.now() - 10_800_000
+        }
+      ]
+    },
+    async openLink() {
+      // Links do nothing in the browser preview.
     },
     async deleteFact(id) {
       facts = facts.filter((f) => f.id !== id)

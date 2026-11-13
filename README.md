@@ -33,7 +33,7 @@ Talk to it, and it answers out loud. It opens apps, finds music, checks your PC,
 | "Who won the match last night?" | Searches the web and names its sources |
 | "Remember that I prefer short answers" | Saved on your PC and used in every future chat (see and delete it in Settings) |
 
-Pick a character (Nova, Sage the mentor, Max the friend, or write your own), and the orb changes colour and personality.
+Pick a character (Nova, Sage the mentor, Max the friend, or write your own), and the orb changes colour and personality. Nova keeps that character consistent in conversation and uses remembered details when they help.
 
 ## Two brains, your choice
 
@@ -60,7 +60,7 @@ flowchart LR
     PC & F & R -- "short report" --> N
 ```
 
-Each specialist sees only its task and its own tools, has a 6-step limit, and reports back in a sentence or two. The window shows every step under the agent that ran it. Turn **Team of agents** off in Settings for quicker one-step commands.
+Each specialist sees only its task and its own tools, has a 6-step limit, and reports in one to three sentences what worked, the tool evidence, and any blockers. Nova passes relevant findings between specialists when tasks depend on each other, checks each report before continuing, and gives you one final answer. The window shows every step under the agent that ran it. Turn **Team of agents** off in Settings for quicker one-step commands.
 
 ## How it works
 
@@ -157,7 +157,9 @@ npm run build:win   # Windows installer
 
 Like JS Mastery's Askwell, this repo is set up for a team of AI coding agents: [`CLAUDE.md`](CLAUDE.md) holds the team rules, [`docs/project.md`](docs/project.md) says what to build and [`docs/plan.md`](docs/plan.md) gives the phases, each split into two parallel lanes.
 
-Next on the plan: a "Hey Nova" wake word, MCP tools for calendar and email (with Allow on every send), and a shared FastAPI + LangGraph brain service.
+Phase 3 is in: a "Hey Nova" wake word (Settings → Always on), a system tray with start-with-Windows, and MCP connectors for calendar, email and other apps (Settings → Connectors; anything that changes data asks you first).
+
+Next on the plan: a shared FastAPI + LangGraph brain service.
 
 ## Author
 
