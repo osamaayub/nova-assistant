@@ -234,7 +234,9 @@ export default function App(): React.JSX.Element {
     settings.character === 'custom' ? settings.customName || 'Atlas' : NAMES[settings.character]
   const blocked = needsKey(settings)
   const lastItem = state.items.at(-1)
-  const lastSteps = lastItem?.kind === 'assistant' ? lastItem.steps : []
+  const lastTurn = lastItem?.kind === 'assistant' ? lastItem : undefined
+  const lastSteps = lastTurn?.steps ?? []
+  const lastCommand = [...state.items].reverse().find((i) => i.kind === 'user')?.text ?? ''
   const orbState: OrbState = blocked
     ? 'offline'
     : listening
@@ -358,7 +360,14 @@ export default function App(): React.JSX.Element {
         )}
       </div>
 
-      <CrewBoard steps={lastSteps} busy={state.busy} lead={name} />
+      <CrewBoard
+        steps={lastSteps}
+        busy={state.busy}
+        lead={name}
+        command={lastCommand}
+        startedAt={lastTurn?.startedAt}
+        endedAt={lastTurn?.endedAt}
+      />
 
       <Transcript
         items={state.items}
