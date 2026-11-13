@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkFields, PRESETS } from '../src/renderer/src/features/settings/connectors'
+import { checkFields, parseMcpConfig, PRESETS } from '../src/renderer/src/features/settings/connectors'
 
 describe('connector presets', () => {
   it('pin an exact version so a new release never changes what runs', () => {
@@ -42,5 +42,36 @@ describe('connector presets', () => {
       'mcp-remote@0.16.6',
       'https://example.com/mcp'
     ])
+  })
+
+  it('connects WhatsApp through the human-in-the-loop MCP bridge', () => {
+    const wa = PRESETS.find((p) => p.id === 'whatsapp')!
+    expect(checkFields(wa, { phone: '' })).toMatch(/whatsapp number/i)
+    expect(checkFields(wa, { phone: 'abc' })).toMatch(/numbers only/i)
+    expect(checkFields(wa, { phone: '+1 (555) 123-4567' })).toBe('')
+    const c = wa.build({ phone: '+1 (555) 123-4567' })
+    expect(c.args).toContain('@mhrj/whatsapp-mcp@2.0.3')
+    expect(c.env.WHATSAPP_TARGET_NUMBER).toBe('15551234567@s.whatsapp.net')
+    expect(c.env.WHATSAPP_ALLOWED_NUMBERS).toBe('15551234567@s.whatsapp.net')
+  })
+
+  it('imports a pasted MCP JSON config', () => {
+    const ok = parseMcpConfig(
+      '{"mcpServers":{"github":{"command":"npx","args":["-y","github-mcp"],"env":{"TOKEN":"x"}}}}'
+    )
+    expect(ok).toEqual({
+      config: { name: 'github', command: 'npx', args: ['-y', 'github-mcp'], env: { TOKEN: 'x' } }
+    })
+    const url = parseMcpConfig('{"url":"https://example.com/mcp","name":"Remote Tools"}')
+    expect(url).toEqual({
+      config: {
+        name: 'Remote-Tools',
+        command: 'npx',
+        args: ['-y', 'mcp-remote@0.16.6', 'https://example.com/mcp'],
+        env: {}
+      }
+    })
+    expect(parseMcpConfig('nope')).toHaveProperty('error')
+    expect(parseMcpConfig('{"mcpServers":{"a":{},"b":{}}}')).toHaveProperty('error')
   })
 })
