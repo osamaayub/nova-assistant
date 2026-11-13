@@ -50,6 +50,8 @@ describe('system prompt', () => {
     expect(p).toMatch(/No markdown/)
     expect(p).toMatch(/Talk naturally, respond to the user's tone/)
     expect(p).toMatch(/without pretending to have human feelings/)
+    expect(p).toMatch(/Plan, Act, Observe, Verify/)
+    expect(p).toMatch(/temporary experts/)
     expect(p).toMatch(/spotify/)
     expect(p).toMatch(/- Likes tea/)
     expect(p).toMatch(/name is Osama/)
