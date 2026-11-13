@@ -3,12 +3,21 @@
 export type CharacterId = 'nova' | 'mentor' | 'friend' | 'custom'
 export type VoiceEngine = 'system' | 'kokoro'
 export type ModelId = 'claude-haiku-5-5' | 'claude-sonnet-5-5' | 'claude-opus-5-5'
-export type ProviderId = 'claude' | 'ollama'
+export type ProviderId = 'claude' | 'ollama' | 'flm'
 export type AgentMode = 'team' | 'single'
 
 export interface CustomApp {
   name: string
   path: string
+}
+
+/** An MCP server Nova can connect to (calendar, email, ...). Runs as its own process. */
+export interface McpServerConfig {
+  name: string
+  command: string
+  args: string[]
+  /** Extra environment variables for the server process. */
+  env: Record<string, string>
 }
 
 export interface Settings {
@@ -27,6 +36,9 @@ export interface Settings {
   speakReplies: boolean
   webSearch: boolean
   customApps: CustomApp[]
+  startWithWindows: boolean
+  wakeWord: boolean
+  mcpServers: McpServerConfig[]
 }
 
 /** What the window receives: settings, plus whether a key is saved (never the key itself). */
@@ -39,6 +51,22 @@ export interface Fact {
   id: number
   text: string
   createdAt: string
+}
+
+export interface Headline {
+  title: string
+  url: string
+  source: string
+  at: number | null
+}
+
+/** Live state of one configured MCP server, shown in Settings. */
+export interface McpServerStatus {
+  name: string
+  state: 'connected' | 'connecting' | 'error' | 'off'
+  /** Tool names the server offers, e.g. "gmail_send". */
+  tools: string[]
+  error?: string
 }
 
 /** Events the agent streams to the window while it works. */
@@ -75,5 +103,11 @@ export interface NovaApi {
   listFacts(): Promise<Fact[]>
   deleteFact(id: number): Promise<Fact[]>
   checkOllama(url: string): Promise<{ ok: true; models: string[] } | { ok: false; error: string }>
+  listMcp(): Promise<McpServerStatus[]>
+  reconnectMcp(): Promise<McpServerStatus[]>
+  showWindow(): Promise<void>
+  headlines(): Promise<Headline[]>
+  /** Opens a public web link in the real browser. */
+  openLink(url: string): Promise<void>
   platform: string
 }

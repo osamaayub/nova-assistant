@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type Anthropic from '@anthropic-ai/sdk'
 import { claudeProvider } from '../src/main/agent/providers/claude'
+import { flmProvider } from '../src/main/agent/providers/flm'
 import {
   cleanOllamaUrl,
   listOllamaModels,
@@ -233,5 +234,98 @@ describe('Ollama provider (free, local)', () => {
     ])
     expect(cleanOllamaUrl('http://127.0.0.1:11434/api')).toBe('http://127.0.0.1:11434')
     expect(() => cleanOllamaUrl('file:///etc')).toThrow()
+  })
+})
+
+/** A fake flm server that streams the given chunks as OpenAI SSE data lines. */
+function fakeFlm(chunks: unknown[], status = 200) {
+  const requests: { url: string; body: Record<string, unknown> }[] = []
+  const fetchImpl: FetchLike = async (url, init) => {
+    requests.push({ url, body: init?.body ? JSON.parse(init.body) : {} })
+    const sse = chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join('') + 'data: [DONE]\n\n'
+    const bytes = new TextEncoder().encode(sse)
+    const cut = Math.floor(bytes.length / 2)
+    return {
+      ok: status < 400,
+      status,
+      text: async () => (status < 400 ? sse : 'slow down'),
+      json: async () => ({}),
+      body: new ReadableStream({
+        start(c) {
+          c.enqueue(bytes.slice(0, cut))
+          c.enqueue(bytes.slice(cut))
+          c.close()
+        }
+      })
+    }
+  }
+  return { fetchImpl, requests }
+}
+
+describe('flm provider (free cloud, no key)', () => {
+  it('streams text and tool calls in OpenAI format', async () => {
+    const { fetchImpl, requests } = fakeFlm([
+      { choices: [{ delta: { content: 'Opening ' } }] },
+      { choices: [{ delta: { content: 'it.' } }] },
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                { index: 0, id: 'call_1', function: { name: 'open_app', arguments: '{"app":"spo' } }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        choices: [
+          { delta: { tool_calls: [{ index: 0, function: { arguments: 'tify"}' } }] }, finish_reason: 'tool_calls' }
+        ]
+      }
+    ])
+    const deltas: string[] = []
+    const p = flmProvider(fetchImpl)
+    const messages: Msg[] = [
+      { role: 'user', parts: [{ type: 'text', text: 'hi' }] },
+      {
+        role: 'assistant',
+        parts: [{ type: 'tool_call', id: 'a', name: 'open_app', input: { app: 'x' } }]
+      },
+      {
+        role: 'user',
+        parts: [{ type: 'tool_result', id: 'a', name: 'open_app', content: 'Opened X.' }]
+      }
+    ]
+    const r = await p.chat({
+      system: 'sys',
+      messages,
+      tools,
+      webSearch: true,
+      onText: (d) => deltas.push(d)
+    })
+    expect(deltas.join('')).toBe('Opening it.')
+    expect(r.stop).toBe('tool_use')
+    expect(r.parts[1]).toMatchObject({ type: 'tool_call', name: 'open_app', input: { app: 'spotify' } })
+    const body = requests[0].body as {
+      model: string
+      stream: boolean
+      messages: { role: string; tool_call_id?: string }[]
+      tools: { function: { name: string } }[]
+    }
+    expect(requests[0].url).toBe('https://api.jarvisclaw.ai/v1/chat/completions')
+    expect(body.model).toBe('auto/free')
+    expect(body.stream).toBe(true)
+    expect(body.messages.map((m) => m.role)).toEqual(['system', 'user', 'assistant', 'tool'])
+    expect(body.messages[3].tool_call_id).toBe('a')
+    expect(body.tools[0].function.name).toBe('open_app')
+    expect(p.canSearchWeb).toBe(false)
+  })
+
+  it('explains rate limits in plain words', async () => {
+    const { fetchImpl } = fakeFlm([], 429)
+    await expect(
+      flmProvider(fetchImpl).chat({ system: '', messages: [], tools: [], webSearch: false })
+    ).rejects.toThrow(/rate limiting/)
   })
 })

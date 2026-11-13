@@ -6,19 +6,22 @@ import { getSettings, readApiKey } from '../settings/store'
 import { runTurn } from './loop'
 import { buildSystemPrompt } from './prompt'
 import { claudeProvider } from './providers/claude'
+import { flmProvider } from './providers/flm'
 import { ollamaProvider } from './providers/ollama'
-import { mainAgentTools, SPECIALISTS, specialistPrompt, type Specialist } from './team'
+import { connectorsSpecialist, mainAgentTools, SPECIALISTS, specialistPrompt, type Specialist } from './team'
+import type { McpManager } from '../mcp/manager'
 import type { Platform } from './tools/types'
 import type { Msg, Provider } from './types'
 
 const SPECIALIST_STEPS = 6
 
-/** Builds the brain the user chose in Settings. Ollama needs no key. */
+/** Builds the brain the user chose in Settings. Ollama and flm need no key. */
 export function createProvider(s: Settings, apiKey: string | null): Provider {
   if (s.provider === 'ollama') return ollamaProvider(s.ollamaUrl, s.ollamaModel)
+  if (s.provider === 'flm') return flmProvider()
   if (!apiKey)
     throw new Error(
-      'Add your Claude API key in Settings, or switch the brain to free local AI (Ollama).'
+      'Add your Claude API key in Settings, or switch the brain to free local AI (Ollama) or free cloud.'
     )
   return claudeProvider(new Anthropic({ apiKey, maxRetries: 2, timeout: 60_000 }), s.model)
 }
@@ -34,7 +37,8 @@ export class AgentService {
     private platform: Platform,
     private memory: MemoryStore,
     private emit: (e: AgentEvent) => void,
-    private makeProvider: (s: Settings) => Provider = (s) => createProvider(s, readApiKey())
+    private makeProvider: (s: Settings) => Provider = (s) => createProvider(s, readApiKey()),
+    private mcp?: McpManager
   ) {}
 
   async send(text: string): Promise<void> {
@@ -83,18 +87,22 @@ export class AgentService {
       }
 
       const team = settings.agentMode === 'team'
+      const connectorTools = this.mcp ? await this.mcp.agentTools() : []
+      const specialists = connectorTools.length
+        ? [...SPECIALISTS, connectorsSpecialist(connectorTools)]
+        : SPECIALISTS
       const result = await runTurn({
         provider,
         system: buildSystemPrompt(settings, this.memory.list(), new Date(), this.platform.os, {
           mode: settings.agentMode,
           canSearch: provider.canSearchWeb && settings.webSearch,
           team: team
-            ? SPECIALISTS.map((s) => ({ tool: s.tool, name: s.name, when: s.when }))
+            ? specialists.map((s) => ({ tool: s.tool, name: s.name, when: s.when }))
             : undefined
         }),
         history: this.history,
         userText,
-        tools: mainAgentTools(settings.agentMode, delegate),
+        tools: mainAgentTools(settings.agentMode, delegate, specialists),
         // In team mode the Research agent searches; in single mode Nova searches itself.
         webSearch: !team && settings.webSearch,
         ctx,

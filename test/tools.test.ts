@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { openApp, resolveApp } from '../src/main/agent/tools/apps'
+import { readCodeFile, runProjectCheck, writeCodeFile } from '../src/main/agent/tools/code'
 import {
   categoryOf,
   insideAllowed,
@@ -127,6 +128,43 @@ describe('files', () => {
     const r = await organizeDownloads.run({}, c)
     expect(r.content).toMatch(/declined/)
     expect(existsSync(join(platform.folders.downloads, 'a.png'))).toBe(true)
+  })
+})
+
+describe('code tools', () => {
+  it('reads code files only inside allowed folders', async () => {
+    const { ctx: c, platform } = await ctx()
+    mkdirSync(platform.folders.documents, { recursive: true })
+    writeFileSync(join(platform.folders.documents, 'app.ts'), 'export const x = 1')
+    const ok = await readCodeFile.run({ folder: 'documents', path: 'app.ts', maxChars: 20000 }, c)
+    expect(ok.content).toContain('export const x = 1')
+    const bad = await readCodeFile.run({ folder: 'documents', path: '../outside.ts', maxChars: 20000 }, c)
+    expect(bad.isError).toBe(true)
+  })
+
+  it('writes only after approval and refuses silent overwrite', async () => {
+    const { ctx: cNo, platform } = await ctx('win32', false)
+    const cYes = { ...cNo, confirm: async () => true }
+    const dir = platform.folders.documents
+    const input = { folder: 'documents' as const, path: 'src/app.ts', content: 'export {}', overwrite: false }
+    const no = await writeCodeFile.run(input, cNo)
+    expect(no.content).toMatch(/declined/)
+    expect(existsSync(join(dir, 'src', 'app.ts'))).toBe(false)
+    const yes = await writeCodeFile.run(input, cYes)
+    expect(yes.content).toMatch(/Wrote/)
+    expect(existsSync(join(dir, 'src', 'app.ts'))).toBe(true)
+    const again = await writeCodeFile.run(input, cYes)
+    expect(again.isError).toBe(true)
+    const replace = await writeCodeFile.run({ ...input, overwrite: true }, cYes)
+    expect(replace.content).toMatch(/Wrote/)
+  })
+
+  it('asks before running fixed checks', async () => {
+    const { ctx: c, platform } = await ctx('win32', false)
+    mkdirSync(platform.folders.documents, { recursive: true })
+    writeFileSync(join(platform.folders.documents, 'package.json'), '{}')
+    const r = await runProjectCheck.run({ folder: 'documents', path: '', check: 'test' }, c)
+    expect(r.content).toMatch(/declined/)
   })
 })
 

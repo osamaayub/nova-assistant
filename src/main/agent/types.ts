@@ -38,7 +38,7 @@ export interface ChatRequest {
 }
 
 export interface Provider {
-  id: 'claude' | 'ollama'
+  id: 'claude' | 'ollama' | 'flm'
   label: string
   /** Built-in web search (Claude only). Other providers use the read_web_page tool instead. */
   canSearchWeb: boolean

@@ -55,6 +55,20 @@ void main() {
   gl_FragColor = vec4(mix(uColorB, uColorA, vGlow), alpha);
 }`
 
+/** Soft radial glow used for the core sprite and could be reused for markers. */
+function glowTexture(): THREE.Texture {
+  const c = document.createElement('canvas')
+  c.width = c.height = 64
+  const g = c.getContext('2d')!
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32)
+  grad.addColorStop(0, 'rgba(255,255,255,1)')
+  grad.addColorStop(0.4, 'rgba(255,255,255,0.4)')
+  grad.addColorStop(1, 'rgba(255,255,255,0)')
+  g.fillStyle = grad
+  g.fillRect(0, 0, 64, 64)
+  return new THREE.CanvasTexture(c)
+}
+
 /**
  * The assistant's face: a sphere of particles. It breathes when idle, leans in while listening,
  * swirls while thinking and pulses with the voice while speaking.
@@ -118,6 +132,41 @@ export function Orb({
     })
     scene.add(new THREE.Points(geo, mat))
 
+    // A soft core inside the particle shell: it brightens with the orb's energy.
+    const core = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: glowTexture(),
+        color: new THREE.Color(live.current.colors[0]),
+        transparent: true,
+        opacity: 0.3,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      })
+    )
+    core.scale.setScalar(1.1)
+    scene.add(core)
+
+    // A thin orbit ring, tilted, turning slowly around the character.
+    const ringGroup = new THREE.Group()
+    ringGroup.rotation.x = 1.15
+    const ringPts: THREE.Vector3[] = []
+    for (let i = 0; i < 128; i++) {
+      const a = (i / 128) * Math.PI * 2
+      ringPts.push(new THREE.Vector3(Math.cos(a) * 1.55, Math.sin(a) * 1.55, 0))
+    }
+    const ring = new THREE.LineLoop(
+      new THREE.BufferGeometry().setFromPoints(ringPts),
+      new THREE.LineBasicMaterial({
+        color: new THREE.Color(live.current.colors[0]),
+        transparent: true,
+        opacity: 0.28,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      })
+    )
+    ringGroup.add(ring)
+    scene.add(ringGroup)
+
     const resize = (): void => {
       const { width, height } = el.getBoundingClientRect()
       renderer.setSize(width, height, false)
@@ -144,6 +193,13 @@ export function Orb({
       uniforms.uTime.value += dt * (reduce ? 0.25 : 1)
       uniforms.uColorA.value.lerp(new THREE.Color(c[0]), dt * 3)
       uniforms.uColorB.value.lerp(new THREE.Color(c[1]), dt * 3)
+      const energy = uniforms.uLevel.value
+      core.scale.setScalar(0.9 + energy * 0.7 + Math.sin(now / 900) * 0.04)
+      ;(core.material as THREE.SpriteMaterial).opacity = 0.18 + energy * 0.55
+      ;(core.material as THREE.SpriteMaterial).color.lerp(new THREE.Color(c[0]), dt * 3)
+      ringGroup.rotation.z += dt * (0.25 + energy * 1.4)
+      ;(ring.material as THREE.LineBasicMaterial).opacity = 0.14 + energy * 0.4
+      ;(ring.material as THREE.LineBasicMaterial).color.lerp(new THREE.Color(c[0]), dt * 3)
       renderer.render(scene, camera)
       raf = requestAnimationFrame(frame)
     }
@@ -154,6 +210,10 @@ export function Orb({
       ro.disconnect()
       geo.dispose()
       mat.dispose()
+      core.material.map?.dispose()
+      core.material.dispose()
+      ring.geometry.dispose()
+      ring.material.dispose()
       renderer.dispose()
       renderer.domElement.remove()
     }

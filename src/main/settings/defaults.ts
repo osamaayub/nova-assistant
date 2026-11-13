@@ -16,7 +16,10 @@ export const DEFAULT_SETTINGS: Settings = {
   kokoroVoice: 'am_michael',
   speakReplies: true,
   webSearch: true,
-  customApps: []
+  customApps: [],
+  startWithWindows: false,
+  wakeWord: false,
+  mcpServers: []
 }
 
 const MODELS = ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5'] as const
@@ -40,8 +43,33 @@ export function cleanSettings(raw: unknown): Settings {
         .filter((a) => a.name && a.path)
         .slice(0, 30)
     : []
+  const mcpServers = Array.isArray(r.mcpServers)
+    ? r.mcpServers
+        .filter(
+          (s): s is { name: string; command: string; args?: unknown; env?: unknown } =>
+            !!s && typeof s.name === 'string' && typeof s.command === 'string'
+        )
+        .map((s) => ({
+          name: s.name.trim().slice(0, 40),
+          command: s.command.trim().slice(0, 400),
+          args: Array.isArray(s.args)
+            ? s.args.filter((a): a is string => typeof a === 'string').slice(0, 20).map((a) => a.slice(0, 300))
+            : [],
+          env:
+            s.env && typeof s.env === 'object' && !Array.isArray(s.env)
+              ? Object.fromEntries(
+                  Object.entries(s.env as Record<string, unknown>)
+                    .filter((e): e is [string, string] => typeof e[1] === 'string')
+                    .slice(0, 30)
+                    .map(([k, v]) => [k.slice(0, 100), v.slice(0, 2000)])
+                )
+              : {}
+        }))
+        .filter((s) => s.name && s.command)
+        .slice(0, 10)
+    : []
   return {
-    provider: pick('provider', ['claude', 'ollama'] as const),
+    provider: pick('provider', ['claude', 'ollama', 'flm'] as const),
     model: pick('model', MODELS),
     ollamaUrl: str('ollamaUrl', 200),
     ollamaModel: str('ollamaModel', 80).trim() || DEFAULT_SETTINGS.ollamaModel,
@@ -55,6 +83,9 @@ export function cleanSettings(raw: unknown): Settings {
     kokoroVoice: str('kokoroVoice', 40),
     speakReplies: bool('speakReplies'),
     webSearch: bool('webSearch'),
-    customApps: apps
+    customApps: apps,
+    startWithWindows: bool('startWithWindows'),
+    wakeWord: bool('wakeWord'),
+    mcpServers
   }
 }

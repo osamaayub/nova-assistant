@@ -54,7 +54,7 @@ This file is the source of truth for **what** we build. `docs/plan.md` says **in
 | **Files agent** | The user's folders, tidying Downloads | `list_folder`, `open_folder`, `organize_downloads` |
 | **Research agent** | Current facts | Claude web search, `read_web_page`, `get_datetime` |
 
-Rules: a specialist sees only its task (not the chat), gets at most 6 steps, and reports back in 1–3 sentences. Only the main agent speaks to the user. "Team mode" can be turned off in Settings; then one agent has every tool.
+Rules: a specialist sees only its task (not the chat), gets at most 6 steps, and reports back in 1–3 sentences with tool evidence and any blockers. Nova includes needed context in every handoff, waits for reports before starting dependent tasks, and checks results before reporting success. Only the main agent speaks to the user. "Team mode" can be turned off in Settings; then one agent has every tool.
 
 ## 6. Safety
 
@@ -69,4 +69,4 @@ Rules: a specialist sees only its task (not the chat), gets at most 6 steps, and
 
 ## 7. Design
 
-Dark, calm, one focus: the particle orb. It breathes when idle, leans in while listening, swirls while thinking, pulses while speaking. Each character has its own orb colors. Steps appear under the reply, labelled with the agent that ran them.
+Dark, calm, one focus: the particle orb. It breathes when idle, leans in while listening, swirls while thinking, pulses while speaking. Each character has its own orb colors and a consistent conversational voice. The assistant uses remembered details when they help. Steps appear under the reply, labelled with the agent that ran them.
