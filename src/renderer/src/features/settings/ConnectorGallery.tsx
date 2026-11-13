@@ -156,8 +156,10 @@ export function ConnectorGallery({
       <details className="connector-custom">
         <summary>Add a custom connector</summary>
         <p className="hint">
-          Any program that speaks MCP over stdio. Example: name <code>notes</code>, command{' '}
-          <code>npx</code>, args <code>-y some-mcp-server</code>.
+          Any program that speaks MCP over stdio, or a remote MCP URL through mcp-remote. Examples:{' '}
+          name <code>notes</code>, command <code>npx</code>, args <code>-y some-mcp-server</code>; or name{' '}
+          <code>remote</code>, command <code>npx</code>, args{' '}
+          <code>-y mcp-remote@0.16.6 https://example.com/mcp</code>.
         </p>
         <div className="row">
           <input
