@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { resolveCommand } from './command'
 import type { McpServerConfig } from '../../shared/types'
 
 /**
@@ -52,7 +53,8 @@ export class McpClient {
     return new Promise<void>((resolve, reject) => {
       let proc: ChildProcessWithoutNullStreams
       try {
-        proc = spawn(this.config.command, this.config.args, {
+        const run = resolveCommand(this.config.command, this.config.args)
+        proc = spawn(run.command, run.args, {
           env: { ...process.env, ...this.config.env },
           stdio: ['pipe', 'pipe', 'pipe'],
           windowsHide: true

@@ -23,6 +23,18 @@ export class WorkerClient<Out> {
     }
   }
 
+  /** True while a job is still waiting for its answer. */
+  get busy(): boolean {
+    return this.waiting.size > 0
+  }
+
+  /** Stops the worker and frees the model it holds. */
+  terminate(): void {
+    this.worker.terminate()
+    this.waiting.forEach((j) => j.reject(new Error('Worker stopped')))
+    this.waiting.clear()
+  }
+
   run(message: Record<string, unknown>, transfer: Transferable[] = []): Promise<Out> {
     const id = this.next++
     return new Promise<Out>((resolve, reject) => {

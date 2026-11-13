@@ -1,5 +1,5 @@
 import type { ChatRequest, ModelReply, Msg, Part, Provider } from '../types'
-import { stripThinking, type FetchLike } from './ollama'
+import { maybeTextCall, parseTextToolCalls, stripThinking, type FetchLike } from './ollama'
 
 const CHAT_URL = 'https://api.jarvisclaw.ai/v1/chat/completions'
 
@@ -90,12 +90,17 @@ export function flmProvider(fetchImpl: FetchLike = fetch as unknown as FetchLike
         throw new Error(`Free cloud error ${res.status}: ${body.slice(0, 200)}`)
       }
 
+      const toolNames = req.tools.map((t) => t.name)
       let raw = ''
       let shown = ''
       const calls: { id: string; name: string; args: string }[] = []
       const emitVisible = (): void => {
         const visible = stripThinking(raw)
-        if (visible.length > shown.length && !/<think>(?![\s\S]*<\/think>)/.test(raw)) {
+        if (
+          visible.length > shown.length &&
+          !/<think>(?![\s\S]*<\/think>)/.test(raw) &&
+          !maybeTextCall(visible, toolNames)
+        ) {
           req.onText?.(visible.slice(shown.length))
           shown = visible
         }
@@ -148,6 +153,19 @@ export function flmProvider(fetchImpl: FetchLike = fetch as unknown as FetchLike
       buffer.split('\n').forEach(handle)
 
       const final = stripThinking(raw).trim()
+      const textCalls = calls.some((c) => c?.name) ? null : parseTextToolCalls(final, toolNames)
+      if (textCalls)
+        return {
+          parts: textCalls.map((c, i) => ({
+            type: 'tool_call' as const,
+            id: `call_${i}`,
+            name: c.name,
+            input: c.input
+          })),
+          stop: 'tool_use'
+        }
+      // Text held back because it looked like a call, but was not one: show it now.
+      if (final.length > shown.length && final.startsWith(shown)) req.onText?.(final.slice(shown.length))
       const parts: Part[] = [...(final ? [{ type: 'text' as const, text: final }] : [])]
       for (const c of calls.filter((c) => c?.name))
         parts.push({

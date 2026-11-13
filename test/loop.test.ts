@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { z } from 'zod'
 import { runTurn, toolSpecs, trim } from '../src/main/agent/loop'
+import { serialize } from '../src/main/agent/serialize'
 import { TOOLS } from '../src/main/agent/tools'
+import { defineTool } from '../src/main/agent/tools/types'
 import type { Msg, Part } from '../src/main/agent/types'
 import type { AgentEvent } from '../src/shared/types'
 import { fakePlatform, fakeProvider, memory } from './helpers'
@@ -108,6 +111,83 @@ describe('agent loop (any brain)', () => {
     const r = await run([{ parts: [text('Opened it.')], stop: 'end' }], { agent: 'PC agent' })
     expect(r.events.filter((e) => ['text', 'start', 'done'].includes(e.type))).toEqual([])
     expect(r.text).toBe('Opened it.')
+  })
+})
+
+describe('agents working side by side', () => {
+  it('runs the tools of one reply at the same time and keeps the result order', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const started: string[] = []
+    const tool = (name: string, waitFor?: Promise<void>, then?: () => void) =>
+      defineTool({
+        name,
+        label: name,
+        description: name,
+        schema: z.object({}),
+        run: async () => {
+          started.push(name)
+          then?.()
+          if (waitFor) await waitFor
+          return { content: `${name} done` }
+        }
+      })
+    // "slow" can only finish after "fast" has started. If tools ran one by one this would hang.
+    const tools = [tool('slow', gate), tool('fast', undefined, () => release())]
+    const { provider } = fakeProvider([
+      { parts: [call('a', 'slow', {}), call('b', 'fast', {})], stop: 'tool_use' },
+      { parts: [text('Both done.')], stop: 'end' }
+    ])
+    const { platform } = fakePlatform()
+    const res = await runTurn({
+      provider,
+      system: 's',
+      history: [],
+      userText: 'go',
+      tools,
+      webSearch: false,
+      ctx: { platform, memory: await memory(), customApps: [], now: () => new Date() },
+      turnId: 't',
+      emit: () => {},
+      confirm: async () => true
+    })
+    expect(started).toEqual(['slow', 'fast'])
+    expect(res.text).toBe('Both done.')
+    const results = res.history[2].parts.map((p) => (p.type === 'tool_result' ? p.content : ''))
+    expect(results).toEqual(['slow done', 'fast done'])
+  })
+
+  it('asks "Allow?" questions one at a time, in order', async () => {
+    const log: string[] = []
+    const answers: (() => void)[] = []
+    const ask = serialize(async (id: string) => {
+      log.push(`ask ${id}`)
+      await new Promise<void>((r) => answers.push(r))
+      log.push(`answered ${id}`)
+      return true
+    })
+    const a = ask('one')
+    const b = ask('two')
+    await Promise.resolve()
+    await new Promise((r) => setTimeout(r, 5))
+    expect(log).toEqual(['ask one'])
+    answers[0]()
+    await a
+    await new Promise((r) => setTimeout(r, 5))
+    expect(log).toEqual(['ask one', 'answered one', 'ask two'])
+    answers[1]()
+    await b
+    expect(log.at(-1)).toBe('answered two')
+  })
+
+  it('keeps going after a question fails', async () => {
+    let n = 0
+    const ask = serialize(async () => {
+      if (n++ === 0) throw new Error('boom')
+      return 'ok'
+    })
+    await expect(ask()).rejects.toThrow('boom')
+    await expect(ask()).resolves.toBe('ok')
   })
 })
 

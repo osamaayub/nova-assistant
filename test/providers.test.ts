@@ -6,6 +6,7 @@ import {
   cleanOllamaUrl,
   listOllamaModels,
   ollamaProvider,
+  parseTextToolCalls,
   stripThinking,
   type FetchLike
 } from '../src/main/agent/providers/ollama'
@@ -198,6 +199,41 @@ describe('Ollama provider (free, local)', () => {
     expect(deltas.join('')).toBe('Sure.')
     expect(r.parts).toEqual([{ type: 'text', text: 'Sure.' }])
     expect(stripThinking('a<think>b</think>c')).toBe('ac')
+  })
+
+  it('runs a tool call that the model wrote as plain text, and never shows it', async () => {
+    const { fetchImpl } = fakeOllama([
+      { message: { content: 'open_app{app:<|"|>' } },
+      { message: { content: 'spotify<|"|>}' } },
+      { done: true }
+    ])
+    const deltas: string[] = []
+    const r = await ollamaProvider('http://localhost:11434', 'glm', fetchImpl).chat({
+      system: '',
+      messages: [],
+      tools,
+      webSearch: false,
+      onText: (d) => deltas.push(d)
+    })
+    expect(deltas).toEqual([])
+    expect(r.stop).toBe('tool_use')
+    expect(r.parts).toHaveLength(1)
+    expect(r.parts[0]).toMatchObject({ type: 'tool_call', name: 'open_app', input: { app: 'spotify' } })
+  })
+
+  it('ignores text calls to tools that were not offered, and shows normal text that starts like one', async () => {
+    expect(parseTextToolCalls('delete_all{path:<|"|>C:<|"|>}', ['open_app'])).toBeNull()
+    expect(parseTextToolCalls('Sure, open_app{app:"x"} done', ['open_app'])).toBeNull()
+    const { fetchImpl } = fakeOllama([{ message: { content: 'open_apple pie is nice' } }, { done: true }])
+    const deltas: string[] = []
+    await ollamaProvider('http://localhost:11434', 'glm', fetchImpl).chat({
+      system: '',
+      messages: [],
+      tools,
+      webSearch: false,
+      onText: (d) => deltas.push(d)
+    })
+    expect(deltas.join('')).toBe('open_apple pie is nice')
   })
 
   it('explains a missing model with the command to install it', async () => {

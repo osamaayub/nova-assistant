@@ -33,7 +33,7 @@ Talk to it, and it answers out loud. It opens apps, finds music, checks your PC,
 | "Who won the match last night?" | Searches the web and names its sources |
 | "Remember that I prefer short answers" | Saved on your PC and used in every future chat (see and delete it in Settings) |
 
-Pick a character (Nova, Sage the mentor, Max the friend, or write your own), and the orb changes colour and personality. Nova keeps that character consistent in conversation and uses remembered details when they help.
+Pick a character (Nova, Jarvis the butler, Sage the mentor, Max the friend, or write your own), and the orb changes colour and personality. Nova keeps that character consistent in conversation and uses remembered details when they help.
 
 ## Two brains, your choice
 

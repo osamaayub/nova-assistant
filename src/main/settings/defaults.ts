@@ -19,7 +19,8 @@ export const DEFAULT_SETTINGS: Settings = {
   customApps: [],
   startWithWindows: false,
   wakeWord: false,
-  mcpServers: []
+  mcpServers: [],
+  remote: false
 }
 
 const MODELS = ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5'] as const
@@ -74,7 +75,7 @@ export function cleanSettings(raw: unknown): Settings {
     ollamaUrl: str('ollamaUrl', 200),
     ollamaModel: str('ollamaModel', 80).trim() || DEFAULT_SETTINGS.ollamaModel,
     agentMode: pick('agentMode', ['team', 'single'] as const),
-    character: pick('character', ['nova', 'mentor', 'friend', 'custom'] as const),
+    character: pick('character', ['nova', 'jarvis', 'mentor', 'friend', 'custom'] as const),
     customName: str('customName', 30),
     customPersonality: str('customPersonality', 600),
     userName: str('userName', 40),
@@ -86,6 +87,7 @@ export function cleanSettings(raw: unknown): Settings {
     customApps: apps,
     startWithWindows: bool('startWithWindows'),
     wakeWord: bool('wakeWord'),
-    mcpServers
+    mcpServers,
+    remote: bool('remote')
   }
 }

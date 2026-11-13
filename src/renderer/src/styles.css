@@ -15,6 +15,10 @@
   font-size: 15px;
   line-height: 1.45;
 }
+[data-character='jarvis'] {
+  --accent: #fca5a5;
+  --accent-ink: #1f0707;
+}
 [data-character='mentor'] {
   --accent: #fde68a;
   --accent-ink: #1f1500;
@@ -116,6 +120,215 @@ textarea {
 .orb {
   position: absolute;
   inset: 0;
+}
+.connector-grid {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+.connector {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+}
+.connector.on {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+}
+.connector-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.connector-head strong {
+  flex: 1;
+}
+.connector-blurb {
+  margin: 6px 0 2px;
+  font-size: 13px;
+}
+.connector-access,
+.connector-state {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.connector-state.connected {
+  color: var(--ok);
+}
+.connector-state.error {
+  color: var(--danger);
+}
+.connector-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.connector-custom {
+  margin-top: 10px;
+}
+.connector summary,
+.connector-custom summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--muted);
+}
+.status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--line);
+  flex: none;
+}
+.status-dot.connected {
+  background: var(--ok);
+}
+.status-dot.connecting {
+  background: var(--accent);
+  animation: crew-pulse 1.1s ease-in-out infinite;
+}
+.status-dot.error {
+  background: var(--danger);
+}
+.phone-pair {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+}
+.phone-pair img {
+  border-radius: 10px;
+  background: #e7ecf5;
+}
+.crew {
+  flex: none;
+  margin: 0 16px 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+}
+.crew-lead,
+.crew-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.crew-tag {
+  font-size: 11px;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-radius: 999px;
+  padding: 0 8px;
+}
+.crew-line {
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.crew-lead .crew-line {
+  flex: 1;
+}
+.crew-count {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.crew-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: none;
+}
+.crew-dot.on {
+  background: var(--agent, var(--accent));
+}
+.crew-cards {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+}
+.crew-card {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--agent);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  min-width: 0;
+}
+.crew-card.working {
+  border-color: var(--agent);
+}
+.crew-card.working .crew-dot {
+  animation: crew-pulse 1.1s ease-in-out infinite;
+}
+.crew-card.done .crew-state {
+  color: var(--ok);
+}
+.crew-card.failed .crew-state {
+  color: var(--danger);
+}
+.crew-state {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--agent);
+}
+.crew-role {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 2px 0 4px;
+}
+@keyframes crew-pulse {
+  50% {
+    opacity: 0.25;
+    transform: scale(1.5);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .crew-card.working .crew-dot {
+    animation: none;
+  }
+}
+.circuits {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+}
+.circuit {
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+.circuit:hover {
+  color: var(--text);
+}
+.utc-clock {
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  margin-right: auto;
+  margin-left: 12px;
 }
 .onboard,
 .suggestions {

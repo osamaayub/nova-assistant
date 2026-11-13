@@ -24,6 +24,7 @@ function browserFake(): NovaApi {
     startWithWindows: false,
     wakeWord: false,
     mcpServers: [],
+    remote: false,
     hasApiKey: true,
     keyStorage: 'encrypted'
   }
@@ -143,6 +144,17 @@ function browserFake(): NovaApi {
     },
     async reconnectMcp() {
       return this.listMcp()
+    },
+    async remoteInfo() {
+      return {
+        enabled: settings.remote,
+        url: settings.remote ? 'http://192.168.1.20:47821/#t=preview' : null,
+        qr: null,
+        phones: 0
+      }
+    },
+    async remoteReset() {
+      return this.remoteInfo()
     },
     async showWindow() {
       // The preview is already visible.

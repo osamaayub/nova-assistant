@@ -56,6 +56,14 @@ export function reducer(state: AgentState, action: Action): AgentState {
     return { ...state, items: patchLast(state.items, (a) => ({ ...a, confirm: undefined })) }
   const e = action.event
   switch (e.type) {
+    case 'user':
+      // A message typed on the paired phone. Messages from this window were already added locally.
+      return e.from === 'window'
+        ? state
+        : {
+            busy: true,
+            items: [...state.items, { kind: 'user', id: crypto.randomUUID(), text: e.text }]
+          }
     case 'start':
       return {
         busy: true,
