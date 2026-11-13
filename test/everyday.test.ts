@@ -234,7 +234,7 @@ describe('whatsapp_message', () => {
     const r = await whatsappMessage.run({ phone: '+923001234567', message: 'hi' }, ctx)
     expect(calls).toEqual([
       'url:whatsapp://send?phone=923001234567&text=hi',
-      'url:https://wa.me/923001234567?text=hi'
+      'url:https://web.whatsapp.com/send?phone=923001234567&text=hi'
     ])
     expect(calls).not.toContain('enter:whatsapp')
     expect(r.summary).toBe('Chat ready, not sent')

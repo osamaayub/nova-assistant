@@ -4,7 +4,7 @@ import { createFolder, findFile, listFolder, openFolder, organizeDownloads } fro
 import { forgetFact, rememberFact } from './memory'
 import { getDateTime, setTimer, systemStatus } from './system'
 import type { NovaTool } from './types'
-import { openWebsite, playMusic, readWebPage, whatsappMessage } from './web'
+import { openWebsite, playMusic, readWebPage, webSearch, whatsappMessage } from './web'
 
 /** Every tool Nova has. In team mode the specialists share them out (see team.ts). */
 export const TOOLS: NovaTool[] = [
@@ -13,6 +13,7 @@ export const TOOLS: NovaTool[] = [
   openWebsite,
   playMusic,
   whatsappMessage,
+  webSearch,
   readWebPage,
   systemStatus,
   getDateTime,

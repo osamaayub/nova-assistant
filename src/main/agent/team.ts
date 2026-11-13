@@ -5,7 +5,7 @@ import { createFolder, findFile, listFolder, openFolder, organizeDownloads } fro
 import { forgetFact, rememberFact } from './tools/memory'
 import { getDateTime, setTimer, systemStatus } from './tools/system'
 import { defineTool, type NovaTool } from './tools/types'
-import { openWebsite, playMusic, readWebPage, whatsappMessage } from './tools/web'
+import { openWebsite, playMusic, readWebPage, webSearch, whatsappMessage } from './tools/web'
 
 /**
  * Nova works as a small team. The main agent talks to you and decides who should do the job;
@@ -98,10 +98,10 @@ export const SPECIALISTS: Specialist[] = [
     name: 'Research agent',
     tool: 'ask_research_agent',
     when: 'questions that need current or exact facts from the web',
-    tools: [readWebPage, getDateTime],
+    tools: [webSearch, readWebPage, getDateTime],
     webSearch: true,
     instructions:
-      'You are the Research agent. You find current, accurate information. Prefer official sources. If you cannot search the web (local model) and have no page address to read, say that web search needs the Claude brain.'
+      'You are the Research agent. You find current, accurate information. Search with web_search, then read the best one or two results with read_web_page before you answer. Prefer official sources. If the search service does not answer, say so plainly.'
   }
 ]
 
@@ -123,7 +123,7 @@ export function specialistPrompt(s: Specialist, canSearch: boolean): string {
   return `${s.instructions}
 The main assistant (Nova) gave you one task with the context and constraints you need. Stay within your role and use only your tools. Do the task, then report in one to three plain sentences what you completed or found, the evidence from your tools, and any failure, uncertainty, or remaining step. Your reply goes to Nova, not to the user.
 Never claim you did something unless a tool result says it worked. If something failed or you could not verify it, say what and why.
-${s.id === 'research' ? (canSearch ? 'You can search the web. End with the source addresses you used.' : 'You cannot search the web on this brain. You can only read pages whose address you know.') : ''}`.trim()
+${s.id === 'research' ? (canSearch ? 'You can search the web. End with the source addresses you used.' : 'Use web_search to find pages and read_web_page to read them. End with the source addresses you used.') : ''}`.trim()
 }
 
 /** The tools the main agent gets: hand-over tools for each specialist plus memory, or every tool in single mode. */

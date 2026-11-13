@@ -140,10 +140,10 @@ Nova will open WhatsApp, type this in and press Send.`
       await ctx.platform.openUrl(`whatsapp://send?phone=${digits}&text=${text}`)
     } catch {
       // WhatsApp Desktop is not installed: use the web link, which the user finishes by hand.
-      await ctx.platform.openUrl(`https://wa.me/${digits}?text=${text}`)
+      await ctx.platform.openUrl(`https://web.whatsapp.com/send?phone=${digits}&text=${text}`)
       return {
         content:
-          'WhatsApp Desktop is not installed, so the chat opened in the browser with the message typed in. It was NOT sent: the user must press Send.',
+          'WhatsApp Desktop is not installed, so WhatsApp Web opened in the browser with the message typed in (the user must be signed in there). It was NOT sent: the user must press Send.',
         summary: 'Chat ready, not sent'
       }
     }
@@ -182,6 +182,15 @@ export function isPublicHost(hostname: string): boolean {
   )
 }
 
+/** A character from its number, or a space for a number that is not a real character. */
+function codePoint(n: number): string {
+  try {
+    return String.fromCodePoint(n)
+  } catch {
+    return ' '
+  }
+}
+
 /** Turns HTML into readable text: drops scripts, styles and tags, keeps the words. */
 export function htmlToText(html: string): { title: string; text: string } {
   const title = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? '')
@@ -197,6 +206,8 @@ export function htmlToText(html: string): { title: string; text: string } {
     .replace(/&gt;/g, '>')
     .replace(/&#39;|&apos;/g, "'")
     .replace(/&quot;/g, '"')
+    .replace(/&#x([0-9a-f]{1,6});/gi, (_m, h: string) => codePoint(parseInt(h, 16)))
+    .replace(/&#(\d{1,7});/g, (_m, d: string) => codePoint(Number(d)))
     .replace(/[ \t]+/g, ' ')
     .split('\n')
     .map((l) => l.trim())
@@ -237,6 +248,98 @@ export const readWebPage = defineTool({
     return {
       content: `${title ? `Title: ${title}\n` : ''}Source: ${safe.href}\n\n${text.slice(0, 6000)}`,
       summary: `Read ${safe.hostname}`
+    }
+  }
+})
+
+export interface SearchHit {
+  title: string
+  url: string
+  snippet: string
+}
+
+/** DuckDuckGo wraps each result link in a redirect: //duckduckgo.com/l/?uddg=<the real address>. */
+export function realResultUrl(href: string): string | null {
+  try {
+    const wrapped = new URL(href.replace(/&amp;/g, '&'), 'https://duckduckgo.com')
+    const target = wrapped.searchParams.get('uddg') ?? wrapped.href
+    const safe = safeWebUrl(target)
+    // Skip the search engine's own pages, and anything that points at this computer or a private network.
+    if (!safe || !isPublicHost(safe.hostname) || /(^|\.)duckduckgo\.com$/.test(safe.hostname))
+      return null
+    return safe.href
+  } catch {
+    return null
+  }
+}
+
+/** Reads the result titles, addresses and short descriptions out of the search page. Ads are skipped. */
+export function parseSearchResults(html: string, max = 6): SearchHit[] {
+  const hits: SearchHit[] = []
+  for (const block of html.split(/<div class="result\b/).slice(1)) {
+    if (hits.length >= max) break
+    if (/result--ad\b/.test(block.slice(0, 120))) continue
+    const link = /class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/.exec(block)
+    if (!link) continue
+    const url = realResultUrl(link[1])
+    const title = htmlToText(link[2]).text.replace(/\s+/g, ' ').trim()
+    if (!url || !title) continue
+    const snippet = /class="result__snippet"[^>]*>([\s\S]*?)<\/a>/.exec(block)?.[1] ?? ''
+    hits.push({
+      title: title.slice(0, 150),
+      url,
+      snippet: htmlToText(snippet).text.replace(/\s+/g, ' ').trim().slice(0, 300)
+    })
+  }
+  return hits
+}
+
+export const webSearch = defineTool({
+  name: 'web_search',
+  label: 'Searching the web',
+  description:
+    'Search the web (no key needed) and get the top results: title, address and a short description. Use it for current or exact facts, then read the best result with read_web_page. Say where the answer came from.',
+  schema: z.object({
+    query: z
+      .string()
+      .min(2)
+      .max(200)
+      .describe('What to search for, like typing it into a search box')
+  }),
+  async run({ query }, ctx) {
+    const f = ctx.fetch ?? fetch
+    let html: string
+    try {
+      const res = await f(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
+        signal: AbortSignal.timeout(9000),
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Nova-Assistant/1.2',
+          'Accept-Language': 'en-US,en;q=0.9'
+        }
+      })
+      if (!res.ok) throw new Error(String(res.status))
+      html = (await res.text()).slice(0, 2_000_000)
+    } catch {
+      return {
+        content:
+          'The search service did not answer. Tell the user, and offer to open Google in their browser with open_website (https://www.google.com/search?q=...).',
+        isError: true,
+        summary: 'Search unavailable'
+      }
+    }
+    const hits = parseSearchResults(html)
+    if (!hits.length)
+      return {
+        content:
+          'No results came back (the service may be limiting requests). Try different words, or offer to open Google in their browser with open_website.',
+        isError: true,
+        summary: 'No results'
+      }
+    return {
+      content: hits
+        .map((h, i) => `${i + 1}. ${h.title}\n${h.url}${h.snippet ? `\n${h.snippet}` : ''}`)
+        .join('\n\n'),
+      summary: `Searched the web: ${query.slice(0, 50)}`
     }
   }
 })
