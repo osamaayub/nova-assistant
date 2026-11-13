@@ -31,4 +31,16 @@ describe('connector presets', () => {
     expect(checkFields(files, { folder: 'C:\\Docs' })).toBe('')
     expect(checkFields(PRESETS.find((p) => p.id === 'docs')!, {})).toBe('')
   })
+
+  it('connects remote MCP servers by https URL through mcp-remote', () => {
+    const remote = PRESETS.find((p) => p.id === 'remote')!
+    expect(checkFields(remote, { url: '' })).toMatch(/server url/i)
+    expect(checkFields(remote, { url: 'example.com/mcp' })).toMatch(/right/i)
+    expect(checkFields(remote, { url: 'https://example.com/mcp' })).toBe('')
+    expect(remote.build({ url: '  https://example.com/mcp  ' }).args).toEqual([
+      '-y',
+      'mcp-remote@0.16.6',
+      'https://example.com/mcp'
+    ])
+  })
 })

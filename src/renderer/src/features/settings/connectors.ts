@@ -57,6 +57,14 @@ export const PRESETS: ConnectorPreset[] = [
     access: 'Asks before it clicks, types or submits anything.',
     fields: [],
     build: () => npx('browser', ['@playwright/mcp@0.0.85', '--isolated'])
+  },
+  {
+    id: 'remote',
+    name: 'Remote MCP',
+    blurb: 'Connect any remote MCP server by URL, including OpenAI-style tool connectors.',
+    access: 'Runs through mcp-remote. Anything that changes data asks first.',
+    fields: [{ key: 'url', label: 'Server URL', placeholder: 'https://example.com/mcp' }],
+    build: (v) => npx('remote', ['mcp-remote@0.16.6', (v.url ?? '').trim()])
   }
 ]
 
@@ -65,6 +73,7 @@ export function checkFields(p: ConnectorPreset, values: Record<string, string>):
   for (const f of p.fields) {
     const v = (values[f.key] ?? '').trim()
     if (!v) return `Fill in the ${f.label.toLowerCase()}.`
+    if (f.key === 'url' && !/^https?:\/\//i.test(v)) return 'That server URL does not look right.'
     // A leading dash would be read as an option by the server, not as a folder.
     if (v.startsWith('-') || v.length > 260) return `That ${f.label.toLowerCase()} does not look right.`
   }
