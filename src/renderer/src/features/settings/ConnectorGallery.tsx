@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { McpServerConfig, McpServerStatus } from '../../../../shared/types'
-import { checkFields, PRESETS, type ConnectorPreset } from './connectors'
+import { checkFields, parseMcpConfig, PRESETS, type ConnectorPreset } from './connectors'
 
 const stateText = (st?: McpServerStatus): string =>
   st?.state === 'connected'
@@ -27,6 +27,8 @@ export function ConnectorGallery({
   const [values, setValues] = useState<Record<string, string>>({})
   const [problem, setProblem] = useState('')
   const [custom, setCustom] = useState({ name: '', command: '', args: '' })
+  const [paste, setPaste] = useState('')
+  const [customProblem, setCustomProblem] = useState('')
 
   const presetIds = new Set(PRESETS.map((p) => p.id))
   const customServers = servers.filter((s) => !presetIds.has(s.name))
@@ -50,6 +52,17 @@ export function ConnectorGallery({
       { name: custom.name.trim(), command: custom.command.trim(), args, env: {} }
     ])
     setCustom({ name: '', command: '', args: '' })
+  }
+
+  const importJson = async (): Promise<void> => {
+    const parsed = parseMcpConfig(paste)
+    if ('error' in parsed) return setCustomProblem(parsed.error)
+    if (presetIds.has(parsed.config.name)) {
+      return setCustomProblem('That name is used by a built-in connector. Rename it in the JSON.')
+    }
+    setCustomProblem('')
+    await onSave([...servers.filter((s) => s.name !== parsed.config.name), parsed.config])
+    setPaste('')
   }
 
   const failed = servers.some((s) => stOf(s.name)?.state === 'error')
@@ -156,11 +169,21 @@ export function ConnectorGallery({
       <details className="connector-custom">
         <summary>Add a custom connector</summary>
         <p className="hint">
-          Any program that speaks MCP over stdio, or a remote MCP URL through mcp-remote. Examples:{' '}
-          name <code>notes</code>, command <code>npx</code>, args <code>-y some-mcp-server</code>; or name{' '}
-          <code>remote</code>, command <code>npx</code>, args{' '}
-          <code>-y mcp-remote@0.16.6 https://example.com/mcp</code>.
+          Paste the JSON config from MCP docs, or add a command by hand. Remote MCP URLs can go through
+          mcp-remote. Anything that changes data asks first.
         </p>
+        <textarea
+          value={paste}
+          onChange={(e) => setPaste(e.target.value)}
+          rows={4}
+          spellCheck={false}
+          aria-label="Paste MCP config JSON"
+          placeholder='{"mcpServers":{"github":{"command":"npx","args":["-y","some-mcp-server"]}}}'
+        />
+        {customProblem && <p className="error">{customProblem}</p>}
+        <button className="btn" disabled={!paste.trim()} onClick={() => void importJson()}>
+          Import JSON
+        </button>
         <div className="row">
           <input
             placeholder="Name"

@@ -1,14 +1,20 @@
 name: Release (Windows installer)
 
 # Builds Nova-Setup.exe on Windows and attaches it to a GitHub Release.
-# Run it from the Actions tab ("Run workflow"), or push a tag like v1.0.1.
+# Run it from the Actions tab ("Run workflow") to bump, build, tag and publish automatically,
+# or push a tag like v1.2.2 to release an existing version.
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: Release tag, e.g. v1.0.0
-        required: true
-        default: v1.0.0
+      bump:
+        description: Version bump
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      prerelease:
+        description: Mark as prerelease
+        type: boolean
+        default: false
   push:
     tags: ['v*']
 
@@ -26,17 +32,43 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - run: npm run build
-      - name: Build the installer
-        run: npx electron-builder --win nsis --publish never
+      - name: Bump version
+        if: github.event_name == 'workflow_dispatch'
+        run: npm run version:bump -- ${{ inputs.bump }}
+      - run: npm run build:win
+      - name: Commit and tag release
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json src/main/version.ts src/main/mcp/client.ts
+          git commit -m "Release v$VERSION"
+          git push origin HEAD:${GITHUB_REF_NAME}
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
+      - name: Resolve release tag
+        id: meta
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
       - name: Publish the release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.version || github.ref_name }}
-          name: Nova ${{ github.event.inputs.version || github.ref_name }}
-          files: dist/*-setup.exe
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: Nova ${{ steps.meta.outputs.tag }}
+          files: |
+            dist/*-setup.exe
+            dist/*.blockmap
+            dist/latest.yml
+          prerelease: ${{ inputs.prerelease || false }}
           body: |
-            **Download `nova-assistant-*-setup.exe` below, run it, then add your Claude API key in Settings.**
+            **Download `nova-assistant-*-setup.exe` below, run it, then pick a brain in Settings.**
 
             - Hold Space to talk, Alt+Space to show or hide Nova.
             - The first voice use downloads the Whisper speech model (about 80 MB) once.

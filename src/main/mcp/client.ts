@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { APP_VERSION } from '../version'
 import { resolveCommand } from './command'
 import type { McpServerConfig } from '../../shared/types'
 
@@ -74,7 +75,7 @@ export class McpClient {
       this.request('initialize', {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: {},
-        clientInfo: { name: 'nova-assistant', version: '1.2.1' }
+        clientInfo: { name: 'nova-assistant', version: APP_VERSION }
       })
         .then(() => {
           this.notify('notifications/initialized', {})
