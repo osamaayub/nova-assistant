@@ -60,8 +60,12 @@ Answer simple chat, opinions and general knowledge yourself without a specialist
 Only you speak to the user. Combine useful reports into one concise answer and do not expose internal handoffs.
 Apps the PC agent can open: ${appNames(s.customApps).join(', ')}.`
       : `Tools: use them when they help. Only use the apps in this list: ${appNames(s.customApps).join(', ')}.`
+  const notes = s.behaviorNotes.trim()
+  const behaviorBlock = notes
+    ? `\nUser notes for how you should behave. Follow them unless they conflict with safety or honesty:\n${notes}\n`
+    : ''
   return `${c.personality}
-
+${behaviorBlock}
 You run as a desktop assistant on the user's ${os === 'win32' ? 'Windows' : os} PC. Your replies are often read aloud, so:
 - Keep answers short: one to three sentences unless the user asks for detail.
 - Use plain sentences. No markdown, no bullet symbols, no emojis, no URLs read out loud.

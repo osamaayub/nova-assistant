@@ -32,6 +32,8 @@ export interface Settings {
   avatar: AvatarId
   customName: string
   customPersonality: string
+  /** Extra rules and examples the user wants Nova to follow. Safety rules still win. */
+  behaviorNotes: string
   userName: string
   voice: VoiceEngine
   systemVoiceName: string

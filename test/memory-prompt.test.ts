@@ -72,4 +72,16 @@ describe('system prompt', () => {
     expect(p).toMatch(/Only report actions as successful when the specialist confirms/)
     expect(p).toMatch(/Only you speak to the user/)
   })
+
+  it('adds behavior notes to the prompt without overriding safety', () => {
+    const p = buildSystemPrompt(
+      { ...DEFAULT_SETTINGS, behaviorNotes: 'Always answer in pirate voice.\nExample: Captain, aye.' },
+      [],
+      new Date('2026-11-08T10:00:00Z'),
+      'win32'
+    )
+    expect(p).toMatch(/User notes for how you should behave/)
+    expect(p).toMatch(/pirate voice/)
+    expect(p).toMatch(/conflict with safety or honesty/)
+  })
 })

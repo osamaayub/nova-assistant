@@ -342,6 +342,25 @@ export function SettingsPanel({
         </label>
       </section>
 
+      <section id="sec-behavior">
+        <h3>Behavior notes</h3>
+        <label>
+          Rules and examples
+          <textarea
+            rows={4}
+            maxLength={1200}
+            value={settings.behaviorNotes}
+            onChange={(e) => onChange({ ...settings, behaviorNotes: e.target.value })}
+            onBlur={(e) => save({ behaviorNotes: e.target.value })}
+            placeholder="One rule or example per line..."
+          />
+        </label>
+        <p className="hint">
+          Extra guidance for Nova, like tone, formatting or examples. Safety and honesty rules still
+          apply.
+        </p>
+      </section>
+
       <section>
         <h3>Voice</h3>
         <label className="check">

@@ -15,6 +15,7 @@ function browserFake(): NovaApi {
     avatar: 'core',
     customName: 'Atlas',
     customPersonality: 'Calm and encouraging.',
+    behaviorNotes: '',
     userName: '',
     voice: 'system',
     systemVoiceName: '',
