@@ -1,5 +1,5 @@
 import type { ChatRequest, ModelReply, Msg, Part, Provider } from '../types'
-import { maybeTextCall, parseTextToolCalls, stripThinking, type FetchLike } from './ollama'
+import { parseTextToolCalls, stripThinking, type FetchLike } from './ollama'
 
 const CHAT_URL = 'https://api.jarvisclaw.ai/v1/chat/completions'
 
@@ -66,7 +66,7 @@ export function flmProvider(fetchImpl: FetchLike = fetch as unknown as FetchLike
           signal: req.signal,
           body: JSON.stringify({
             model: 'auto/free',
-            stream: true,
+            stream: false,
             max_tokens: 2048,
             messages: [{ role: 'system', content: req.system }, ...req.messages.flatMap(toOpenAI)],
             tools: req.tools.map((t) => ({
@@ -91,69 +91,23 @@ export function flmProvider(fetchImpl: FetchLike = fetch as unknown as FetchLike
       }
 
       const toolNames = req.tools.map((t) => t.name)
-      let raw = ''
-      let shown = ''
-      const calls: { id: string; name: string; args: string }[] = []
-      const emitVisible = (): void => {
-        const visible = stripThinking(raw)
-        if (
-          visible.length > shown.length &&
-          !/<think>(?![\s\S]*<\/think>)/.test(raw) &&
-          !maybeTextCall(visible, toolNames)
-        ) {
-          req.onText?.(visible.slice(shown.length))
-          shown = visible
-        }
+      const data = (await res.json()) as {
+        error?: string
+        choices?: {
+          message?: {
+            content?: string | null
+            tool_calls?: { id?: string; function?: { name?: string; arguments?: string } }[]
+          }
+        }[]
       }
-      const handle = (line: string): void => {
-        if (!line.startsWith('data:')) return
-        const data = line.slice(5).trim()
-        if (!data || data === '[DONE]') return
-        const chunk = JSON.parse(data) as {
-          error?: string
-          choices?: {
-            delta?: {
-              content?: string
-              tool_calls?: {
-                index?: number
-                id?: string
-                function?: { name?: string; arguments?: string }
-              }[]
-            }
-          }[]
-        }
-        if (chunk.error) throw new Error(`Free cloud: ${chunk.error}`)
-        const delta = chunk.choices?.[0]?.delta
-        if (delta?.content) {
-          raw += delta.content
-          emitVisible()
-        }
-        for (const tc of delta?.tool_calls ?? []) {
-          const i = tc.index ?? 0
-          const cur = (calls[i] ??= { id: '', name: '', args: '' })
-          if (tc.id) cur.id = tc.id
-          if (tc.function?.name) cur.name = tc.function.name
-          if (tc.function?.arguments) cur.args += tc.function.arguments
-        }
-      }
-
-      let buffer = ''
-      const reader = res.body?.getReader()
-      if (reader) {
-        const decoder = new TextDecoder()
-        for (;;) {
-          const { value, done } = await reader.read()
-          if (done) break
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split('\n')
-          buffer = lines.pop() ?? ''
-          lines.forEach(handle)
-        }
-      } else buffer = await res.text()
-      buffer.split('\n').forEach(handle)
-
-      const final = stripThinking(raw).trim()
-      const textCalls = calls.some((c) => c?.name) ? null : parseTextToolCalls(final, toolNames)
+      if (data.error) throw new Error(`Free cloud: ${data.error}`)
+      const message = data.choices?.[0]?.message
+      const final = stripThinking(message?.content ?? '').trim()
+      const calls = (message?.tool_calls ?? []).flatMap((c) => {
+        const name = c.function?.name
+        return name ? [{ id: c.id ?? '', name, args: c.function?.arguments ?? '' }] : []
+      })
+      const textCalls = calls.length ? null : parseTextToolCalls(final, toolNames)
       if (textCalls)
         return {
           parts: textCalls.map((c, i) => ({
@@ -164,10 +118,12 @@ export function flmProvider(fetchImpl: FetchLike = fetch as unknown as FetchLike
           })),
           stop: 'tool_use'
         }
-      // Text held back because it looked like a call, but was not one: show it now.
-      if (final.length > shown.length && final.startsWith(shown)) req.onText?.(final.slice(shown.length))
-      const parts: Part[] = [...(final ? [{ type: 'text' as const, text: final }] : [])]
-      for (const c of calls.filter((c) => c?.name))
+      const parts: Part[] = []
+      if (final) {
+        req.onText?.(final)
+        parts.push({ type: 'text', text: final })
+      }
+      for (const c of calls)
         parts.push({
           type: 'tool_call',
           id: c.id || `call_${parts.length}`,

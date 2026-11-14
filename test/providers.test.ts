@@ -273,53 +273,38 @@ describe('Ollama provider (free, local)', () => {
   })
 })
 
-/** A fake flm server that streams the given chunks as OpenAI SSE data lines. */
-function fakeFlm(chunks: unknown[], status = 200) {
+/** A fake flm server that answers with one OpenAI chat completion JSON body. */
+function fakeFlm(response: unknown, status = 200) {
   const requests: { url: string; body: Record<string, unknown> }[] = []
   const fetchImpl: FetchLike = async (url, init) => {
     requests.push({ url, body: init?.body ? JSON.parse(init.body) : {} })
-    const sse = chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join('') + 'data: [DONE]\n\n'
-    const bytes = new TextEncoder().encode(sse)
-    const cut = Math.floor(bytes.length / 2)
+    const payload = status < 400 ? JSON.stringify(response) : 'slow down'
     return {
       ok: status < 400,
       status,
-      text: async () => (status < 400 ? sse : 'slow down'),
-      json: async () => ({}),
-      body: new ReadableStream({
-        start(c) {
-          c.enqueue(bytes.slice(0, cut))
-          c.enqueue(bytes.slice(cut))
-          c.close()
-        }
-      })
+      text: async () => payload,
+      json: async () => (status < 400 ? response : {}),
+      body: null
     }
   }
   return { fetchImpl, requests }
 }
 
 describe('flm provider (free cloud, no key)', () => {
-  it('streams text and tool calls in OpenAI format', async () => {
-    const { fetchImpl, requests } = fakeFlm([
-      { choices: [{ delta: { content: 'Opening ' } }] },
-      { choices: [{ delta: { content: 'it.' } }] },
-      {
-        choices: [
-          {
-            delta: {
-              tool_calls: [
-                { index: 0, id: 'call_1', function: { name: 'open_app', arguments: '{"app":"spo' } }
-              ]
-            }
-          }
-        ]
-      },
-      {
-        choices: [
-          { delta: { tool_calls: [{ index: 0, function: { arguments: 'tify"}' } }] }, finish_reason: 'tool_calls' }
-        ]
-      }
-    ])
+  it('answers text and tool calls in OpenAI format', async () => {
+    const { fetchImpl, requests } = fakeFlm({
+      choices: [
+        {
+          message: {
+            content: 'Opening it.',
+            tool_calls: [
+              { id: 'call_1', function: { name: 'open_app', arguments: '{"app":"spotify"}' } }
+            ]
+          },
+          finish_reason: 'tool_calls'
+        }
+      ]
+    })
     const deltas: string[] = []
     const p = flmProvider(fetchImpl)
     const messages: Msg[] = [
@@ -351,7 +336,7 @@ describe('flm provider (free cloud, no key)', () => {
     }
     expect(requests[0].url).toBe('https://api.jarvisclaw.ai/v1/chat/completions')
     expect(body.model).toBe('auto/free')
-    expect(body.stream).toBe(true)
+    expect(body.stream).toBe(false)
     expect(body.messages.map((m) => m.role)).toEqual(['system', 'user', 'assistant', 'tool'])
     expect(body.messages[3].tool_call_id).toBe('a')
     expect(body.tools[0].function.name).toBe('open_app')
