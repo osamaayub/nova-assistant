@@ -9,9 +9,35 @@ export function extractCommand(text: string): string | null {
   const m = text
     .trim()
     .toLowerCase()
-    .match(/^(?:hey|ok|okay|hi|hello)?[-\s,]*(?:nova|computer|assistant|hey nova|okay nova|ok nova)\b[\s,.!: -]*/)
+    .match(
+      /^(?:hey|ok|okay|hi|hello)?[-\s,]*(?:nova|computer|assistant|hey nova|okay nova|ok nova)\b[\s,.!: -]*/
+    )
   if (!m) return null
   return text.trim().slice(m[0].length).trim()
+}
+
+/** Short two-note chime so the user knows the wake phrase was heard, even in the tray. */
+export function wakeChime(): void {
+  try {
+    const ctx = new AudioContext()
+    const now = ctx.currentTime
+    ;[660, 880].forEach((freq, i) => {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'sine'
+      osc.frequency.value = freq
+      const t = now + i * 0.09
+      gain.gain.setValueAtTime(0.0001, t)
+      gain.gain.exponentialRampToValueAtTime(0.07, t + 0.02)
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.14)
+      osc.connect(gain).connect(ctx.destination)
+      osc.start(t)
+      osc.stop(t + 0.16)
+    })
+    setTimeout(() => void ctx.close(), 500)
+  } catch {
+    // No audio device: the wake still works, just silently.
+  }
 }
 
 const SAMPLE_RATE = 16000

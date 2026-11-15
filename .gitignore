@@ -7,3 +7,5 @@ out
 *.log*
 .vscode/
 build/
+.vercel
+.env*

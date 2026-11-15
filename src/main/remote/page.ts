@@ -39,12 +39,13 @@ const JS = `
 (function(){
 var $=function(i){return document.getElementById(i)};
 var log=$('log'),dot=$('dot'),title=$('title'),input=$('msg'),act=$('act'),speakBtn=$('speak');
-var token=null,busy=false,cur=null,steps={},steps_n=0,speak=false,ctl=null,retry=2000;
+var token=null,busy=false,cur=null,steps={},steps_n=0,speak=false,ctl=null,retry=2000,alerts=false;
 try{
   var m=/[#&]t=([\\w-]+)/.exec(location.hash);
   if(m){localStorage.setItem('nova-token',m[1]);history.replaceState(null,'',location.pathname)}
   token=localStorage.getItem('nova-token');
   speak=localStorage.getItem('nova-speak')==='1';
+  alerts=localStorage.getItem('nova-alerts')==='1';
 }catch(e){}
 function el(tag,cls,text){var e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
 function bottom(){log.scrollTop=log.scrollHeight}
@@ -69,6 +70,10 @@ function newReply(){
   log.appendChild(box);cur={box:box,stepsBox:stepsBox,txt:txt,text:''};steps={};bottom()
 }
 function ensure(){if(!cur)newReply()}
+function ping(titleText,body){
+  if(!alerts||!body||!document.hidden||!('Notification' in window)||Notification.permission!=='granted')return;
+  try{new Notification(titleText,{body:String(body).slice(0,140)})}catch(e){}
+}
 function onEvent(e){
   if(e.type==='hello'){title.textContent=e.name||'Nova';dot.className='dot on';retry=2000;return}
   if(e.type==='user'){if(e.from==='phone')return;log.appendChild(el('div','me',e.text));bottom();setBusy(true);cur=null;return}
@@ -94,11 +99,12 @@ function onEvent(e){
     document.querySelectorAll('.ask').forEach(function(a){a.remove()});
     setBusy(false);
     var spoken=cur&&cur.text;cur=null;
+    ping(title.textContent+' replied',spoken);
     if(speak&&spoken&&window.speechSynthesis){say(spoken)}else if(calling){startListening()}
     return
   }
-  if(e.type==='error'){ensure();cur.txt.textContent=e.message;cur.txt.className='txt err';setBusy(false);cur=null;if(calling)setTimeout(startListening,1500);return}
-  if(e.type==='notify'){note(e.title+': '+e.body)}
+  if(e.type==='error'){ensure();cur.txt.textContent=e.message;cur.txt.className='txt err';setBusy(false);cur=null;ping(title.textContent+' needs you',e.message);if(calling)setTimeout(startListening,1500);return}
+  if(e.type==='notify'){note(e.title+': '+e.body);ping(e.title,e.body)}
 }
 function connect(){
   if(!token){showPair();return}
@@ -170,6 +176,18 @@ $('fresh').onclick=function(){if(!token)return;post('/api/new').then(function(){
 speakBtn.onclick=function(){speak=!speak;speakBtn.textContent=speak?'Voice on':'Voice off';try{localStorage.setItem('nova-speak',speak?'1':'0')}catch(e){}if(!speak&&window.speechSynthesis)speechSynthesis.cancel()};
 speakBtn.textContent=speak?'Voice on':'Voice off';
 if(!window.speechSynthesis)speakBtn.hidden=true;
+var alertsBtn=$('alerts');
+if('Notification' in window){
+  alertsBtn.textContent=alerts?'Alerts on':'Alerts off';
+  alertsBtn.onclick=function(){
+    if(alerts){alerts=false;alertsBtn.textContent='Alerts off';try{localStorage.setItem('nova-alerts','0')}catch(e){}return}
+    Notification.requestPermission().then(function(p){
+      alerts=p==='granted';alertsBtn.textContent=alerts?'Alerts on':'Alerts off';
+      try{localStorage.setItem('nova-alerts',alerts?'1':'0')}catch(e){}
+      if(!alerts)note('Notifications were blocked. Allow them in the browser settings to get alerts.','err')
+    })
+  }
+}else{alertsBtn.hidden=true}
 connect();
 })();
 `
@@ -182,7 +200,7 @@ export function phonePage(nonce: string): string {
 <title>Nova</title>
 <style nonce="${nonce}">${CSS}</style></head>
 <body>
-<header><span id="dot" class="dot"></span><h1 id="title">Nova</h1><button id="call" type="button">Call</button><button id="speak" type="button">Voice off</button><button id="fresh" type="button" aria-label="New chat">New</button></header>
+<header><span id="dot" class="dot"></span><h1 id="title">Nova</h1><button id="call" type="button">Call</button><button id="speak" type="button">Voice off</button><button id="alerts" type="button">Alerts off</button><button id="fresh" type="button" aria-label="New chat">New</button></header>
 <main id="log" role="log" aria-live="polite"></main>
 <form id="form"><input id="msg" type="text" placeholder="Message Nova" autocomplete="off" maxlength="4000" aria-label="Message Nova"><button id="mic" type="button" aria-label="Talk"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z"/></svg></button><button id="act" class="primary" type="submit">Send</button></form>
 <script nonce="${nonce}">${JS}</script>

@@ -23,7 +23,13 @@ import { McpManager } from './mcp/manager'
 import { MemoryStore } from './memory/store'
 import { createPlatform } from './platform'
 import { listOllamaModels } from './agent/providers/ollama'
-import { clearApiKey, getSettings, publicSettings, saveApiKey, saveSettings } from './settings/store'
+import {
+  clearApiKey,
+  getSettings,
+  publicSettings,
+  saveApiKey,
+  saveSettings
+} from './settings/store'
 
 let win: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -215,6 +221,11 @@ app.whenReady().then(async () => {
   ipcMain.handle('memory:list', () => memory.list())
   ipcMain.handle('memory:delete', (_e, id: unknown) => {
     memory.remove(Number(id))
+    return memory.list()
+  })
+  ipcMain.handle('memory:update', (_e, id: unknown, text: unknown) => {
+    const res = memory.update(Number(id), String(text ?? ''))
+    if (!res.ok) throw new Error(res.reason ?? 'Not saved.')
     return memory.list()
   })
   ipcMain.handle('mcp:list', () => mcp.status())

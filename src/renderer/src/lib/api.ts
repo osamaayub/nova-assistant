@@ -1,8 +1,18 @@
 import type { AgentEvent, Fact, NovaApi, PublicSettings, Settings } from '../../../shared/types'
 
+function ollamaOrigin(url: string): string {
+  const u = new URL(url.trim() || 'http://127.0.0.1:11434')
+  return u.origin
+}
+
+function stripThinking(text: string): string {
+  return text.replace(/<think>[\s\S]*?(<\/think>|$)/g, '')
+}
+
 /**
- * In the app, window.nova comes from the preload script. In a plain browser (design work, screenshots)
- * a small fake answers instead, so the interface can be developed without Electron.
+ * In the app, window.nova comes from the preload script. In a plain browser (the Vercel
+ * preview, design work) this fake answers: chat goes straight to a local Ollama over HTTP,
+ * everything else is a harmless stub. PC tools cannot run in a browser.
  */
 function browserFake(): NovaApi {
   let settings: PublicSettings = {
@@ -33,65 +43,102 @@ function browserFake(): NovaApi {
   let facts: Fact[] = [{ id: 1, text: 'Is learning agentic engineering', createdAt: '2026-11-08' }]
   const listeners = new Set<(e: AgentEvent) => void>()
   const emit = (e: AgentEvent): void => listeners.forEach((l) => l(e))
-  const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+  const history: { role: 'user' | 'assistant'; content: string }[] = []
+  let abort: AbortController | null = null
   return {
     platform: 'browser',
     async send(text) {
       const turnId = crypto.randomUUID()
       emit({ type: 'start', turnId })
-      await wait(500)
-      if (/spotify|music|play/i.test(text)) {
-        emit({
-          type: 'tool',
-          turnId,
-          id: 'a',
-          name: 'play_music',
-          label: 'Finding music',
-          status: 'running',
-          agent: 'PC agent'
+      abort = new AbortController()
+      let reply = ''
+      let shown = ''
+      try {
+        const res = await fetch(`${ollamaOrigin(settings.ollamaUrl)}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: abort.signal,
+          body: JSON.stringify({
+            model: settings.ollamaModel,
+            stream: true,
+            messages: [
+              ...(settings.customName || settings.customPersonality
+                ? [
+                    {
+                      role: 'system' as const,
+                      content: `You are ${settings.customName || 'Nova'}, a voice AI assistant.${settings.customPersonality ? ` ${settings.customPersonality}` : ''} Keep replies short and conversational.`
+                    }
+                  ]
+                : []),
+              ...history,
+              { role: 'user' as const, content: text }
+            ]
+          })
         })
-        await wait(700)
-        emit({
-          type: 'tool',
-          turnId,
-          id: 'a',
-          name: 'play_music',
-          label: 'Finding music',
-          status: 'done',
-          summary: 'Searched YouTube: lofi beats',
-          agent: 'PC agent'
-        })
+        if (!res.ok || !res.body)
+          throw new Error(
+            res.status === 404
+              ? `The model "${settings.ollamaModel}" is not installed. Run: ollama pull ${settings.ollamaModel}`
+              : `Ollama error ${res.status}`
+          )
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        for (;;) {
+          const { value, done } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() ?? ''
+          for (const line of lines) {
+            if (!line.trim()) continue
+            const chunk = JSON.parse(line) as {
+              message?: { content?: string }
+              error?: string
+            }
+            if (chunk.error) throw new Error(`Ollama: ${chunk.error}`)
+            reply += chunk.message?.content ?? ''
+            const visible = stripThinking(reply)
+            if (visible.length > shown.length) {
+              emit({ type: 'text', turnId, delta: visible.slice(shown.length) })
+              shown = visible
+            }
+          }
+        }
+        const final = stripThinking(reply).trim()
+        if (final) {
+          history.push({ role: 'user', content: text }, { role: 'assistant', content: final })
+          if (history.length > 30) history.splice(0, history.length - 30)
+        }
+        if (settings.speakReplies && final && 'speechSynthesis' in window) {
+          const u = new SpeechSynthesisUtterance(final)
+          speechSynthesis.speak(u)
+        }
+        emit({ type: 'done', turnId })
+      } catch (e) {
+        if (abort?.signal.aborted) {
+          emit({ type: 'done', turnId })
+        } else {
+          emit({
+            type: 'error',
+            turnId,
+            message:
+              e instanceof TypeError
+                ? 'Cannot reach Ollama. Start it on your PC and add this site to OLLAMA_ORIGINS.'
+                : e instanceof Error
+                  ? e.message
+                  : 'Chat failed. Try again.'
+          })
+        }
+      } finally {
+        abort = null
       }
-      if (/organi[sz]e/i.test(text)) {
-        emit({
-          type: 'tool',
-          turnId,
-          id: 'b',
-          name: 'organize_downloads',
-          label: 'Organizing Downloads',
-          status: 'running',
-          agent: 'Files agent'
-        })
-        emit({
-          type: 'confirm',
-          turnId,
-          id: 'b',
-          title: 'Move 24 files in Downloads into folders?',
-          detail: 'Images: 9 files\nDocuments: 11 files\nInstallers: 4 files\n\nNothing is deleted.'
-        })
-        return
-      }
-      for (const w of 'Done. I opened a YouTube search for lofi beats. Anything else?'.split(' ')) {
-        emit({ type: 'text', turnId, delta: w + ' ' })
-        await wait(60)
-      }
-      emit({ type: 'done', turnId })
     },
     async stop() {
-      // Nothing to stop in the browser preview.
+      abort?.abort()
     },
     async newChat() {
-      // The preview keeps no history.
+      history.length = 0
     },
     async confirm(id, ok) {
       emit({
@@ -134,8 +181,20 @@ function browserFake(): NovaApi {
     async listFacts() {
       return facts
     },
-    async checkOllama() {
-      return { ok: true as const, models: ['qwen3:8b', 'llama3.1:8b'] }
+    async checkOllama(url) {
+      try {
+        const res = await fetch(`${ollamaOrigin(url)}/api/tags`, {
+          signal: AbortSignal.timeout(4000)
+        })
+        if (!res.ok) return { ok: false as const, error: `Ollama answered ${res.status}` }
+        const data = (await res.json()) as { models?: { name: string }[] }
+        return { ok: true as const, models: (data.models ?? []).map((m) => m.name) }
+      } catch {
+        return {
+          ok: false as const,
+          error: 'Cannot reach Ollama. Is it running, and does OLLAMA_ORIGINS allow this site?'
+        }
+      }
     },
     async listMcp() {
       return settings.mcpServers.map((s) => ({
@@ -152,6 +211,7 @@ function browserFake(): NovaApi {
         enabled: settings.remote,
         url: settings.remote ? 'http://192.168.1.20:47821/#t=preview' : null,
         qr: null,
+        publicUrl: settings.remote ? 'https://preview.trycloudflare.com/#t=preview' : null,
         phones: 0
       }
     },
@@ -183,11 +243,19 @@ function browserFake(): NovaApi {
         }
       ]
     },
-    async openLink() {
-      // Links do nothing in the browser preview.
+    async openLink(url) {
+      window.open(url, '_blank', 'noopener')
     },
     async deleteFact(id) {
       facts = facts.filter((f) => f.id !== id)
+      return facts
+    },
+    async updateFact(id, text) {
+      const clean = text.replace(/\s+/g, ' ').trim().slice(0, 300)
+      if (!clean) throw new Error('Empty fact.')
+      if (facts.some((f) => f.id !== id && f.text.toLowerCase() === clean.toLowerCase()))
+        throw new Error('Already remembered.')
+      facts = facts.map((f) => (f.id === id ? { ...f, text: clean } : f))
       return facts
     }
   }

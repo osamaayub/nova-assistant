@@ -55,9 +55,13 @@ export interface RemoteInfo {
   url: string | null
   /** The same address as a QR code image (data URL). */
   qr: string | null
+  /** A public https address that works from anywhere (Cloudflare tunnel). Null when it could not start. */
+  publicUrl: string | null
   /** Phones connected right now. */
   phones: number
   error?: string
+  /** Why the public (anywhere) link is missing, when it is. */
+  publicError?: string
 }
 
 /** What the window receives: settings, plus whether a key is saved (never the key itself). */
@@ -122,6 +126,8 @@ export interface NovaApi {
   clearApiKey(): Promise<PublicSettings>
   listFacts(): Promise<Fact[]>
   deleteFact(id: number): Promise<Fact[]>
+  /** Rewrites a remembered fact. Returns the updated list. */
+  updateFact(id: number, text: string): Promise<Fact[]>
   checkOllama(url: string): Promise<{ ok: true; models: string[] } | { ok: false; error: string }>
   listMcp(): Promise<McpServerStatus[]>
   reconnectMcp(): Promise<McpServerStatus[]>

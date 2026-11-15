@@ -139,7 +139,10 @@ describe('code tools', () => {
     writeFileSync(join(platform.folders.documents, 'app.ts'), 'export const x = 1')
     const ok = await readCodeFile.run({ folder: 'documents', path: 'app.ts', maxChars: 20000 }, c)
     expect(ok.content).toContain('export const x = 1')
-    const bad = await readCodeFile.run({ folder: 'documents', path: '../outside.ts', maxChars: 20000 }, c)
+    const bad = await readCodeFile.run(
+      { folder: 'documents', path: '../outside.ts', maxChars: 20000 },
+      c
+    )
     expect(bad.isError).toBe(true)
   })
 
@@ -147,7 +150,12 @@ describe('code tools', () => {
     const { ctx: cNo, platform } = await ctx('win32', false)
     const cYes = { ...cNo, confirm: async () => true }
     const dir = platform.folders.documents
-    const input = { folder: 'documents' as const, path: 'src/app.ts', content: 'export {}', overwrite: false }
+    const input = {
+      folder: 'documents' as const,
+      path: 'src/app.ts',
+      content: 'export {}',
+      overwrite: false
+    }
     const no = await writeCodeFile.run(input, cNo)
     expect(no.content).toMatch(/declined/)
     expect(existsSync(join(dir, 'src', 'app.ts'))).toBe(false)
@@ -181,5 +189,17 @@ describe('memory tools', () => {
     expect((await rememberFact.run({ fact: 'My password is hunter2' }, c)).isError).toBe(true)
     expect((await forgetFact.run({ about: 'short' }, c)).content).toMatch(/Forgot 1/)
     expect(c.memory.list()).toEqual([])
+  })
+
+  it('edits a fact, refuses blanks and duplicates', async () => {
+    const { ctx: c } = await ctx()
+    await rememberFact.run({ fact: 'Likes green tea' }, c)
+    await rememberFact.run({ fact: 'Works night shifts' }, c)
+    const [tea] = c.memory.list().filter((f) => f.text === 'Likes green tea')
+    expect(c.memory.update(tea.id, 'Prefers green tea')).toEqual({ ok: true })
+    expect(c.memory.list().find((f) => f.id === tea.id)?.text).toBe('Prefers green tea')
+    expect(c.memory.update(tea.id, 'works night shifts').ok).toBe(false)
+    expect(c.memory.update(tea.id, '   ').ok).toBe(false)
+    expect(c.memory.update(9999, 'Ghost fact').ok).toBe(false)
   })
 })

@@ -734,7 +734,21 @@ textarea {
   padding: 9px 10px;
   color: var(--text);
 }
+.panel .text-input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 9px 10px;
+  color: var(--text);
+}
 .panel .row input {
+  margin-top: 0;
+}
+.panel .list-row .text-input {
+  flex: 1;
   margin-top: 0;
 }
 .panel label.check {
@@ -810,9 +824,7 @@ code {
 .monitor {
   position: fixed;
   inset: 0;
-  background:
-    radial-gradient(90% 55% at 50% -10%, #0d1830 0%, var(--bg) 65%),
-    var(--bg);
+  background: radial-gradient(90% 55% at 50% -10%, #0d1830 0%, var(--bg) 65%), var(--bg);
   z-index: 10;
   display: flex;
   flex-direction: column;
@@ -1104,7 +1116,11 @@ code {
   border-radius: 12px;
   border: 1px solid var(--line);
   background:
-    radial-gradient(60% 50% at 50% 75%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 70%),
+    radial-gradient(
+      60% 50% at 50% 75%,
+      color-mix(in srgb, var(--accent) 10%, transparent),
+      transparent 70%
+    ),
     var(--surface);
   overflow: hidden;
 }
@@ -1564,7 +1580,11 @@ code {
 .world {
   height: 300px;
   background:
-    radial-gradient(70% 55% at 50% 66%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 72%),
+    radial-gradient(
+      70% 55% at 50% 66%,
+      color-mix(in srgb, var(--accent) 14%, transparent),
+      transparent 72%
+    ),
     linear-gradient(180deg, #060a14, #04070d);
   box-shadow: inset 0 0 40px color-mix(in srgb, var(--accent) 8%, transparent);
 }
@@ -1717,7 +1737,11 @@ code {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.045) 0 1px, transparent 1px 3px);
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(255, 255, 255, 0.045) 0 1px,
+    transparent 1px 3px
+  );
 }
 .screen.lit::before {
   content: '';
@@ -1727,7 +1751,11 @@ code {
   height: 14px;
   top: -14px;
   pointer-events: none;
-  background: linear-gradient(transparent, color-mix(in srgb, var(--c) 28%, transparent), transparent);
+  background: linear-gradient(
+    transparent,
+    color-mix(in srgb, var(--c) 28%, transparent),
+    transparent
+  );
   animation: sweep 2.4s linear infinite;
 }
 @keyframes sweep {
@@ -1752,7 +1780,11 @@ code {
   margin-top: 3px;
   border-radius: 50%;
   border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
-  background: radial-gradient(ellipse at center, color-mix(in srgb, var(--c) 30%, transparent), transparent 70%);
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in srgb, var(--c) 30%, transparent),
+    transparent 70%
+  );
   box-shadow: 0 0 10px color-mix(in srgb, var(--c) 20%, transparent);
 }
 .station:not(.idle) .deskplate {
@@ -1812,8 +1844,7 @@ code {
   border: 1px solid var(--hud-line);
   border-radius: 6px;
   background:
-    linear-gradient(180deg, rgba(34, 211, 238, 0.05), transparent 55%),
-    rgba(5, 12, 18, 0.88);
+    linear-gradient(180deg, rgba(34, 211, 238, 0.05), transparent 55%), rgba(5, 12, 18, 0.88);
 }
 .panel-hud::before {
   content: '';
@@ -2022,7 +2053,14 @@ code {
   cursor: pointer;
   font: 700 11px var(--mono);
   letter-spacing: 0.2em;
-  clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 10px 100%, 0 50%);
+  clip-path: polygon(
+    10px 0,
+    calc(100% - 10px) 0,
+    100% 50%,
+    calc(100% - 10px) 100%,
+    10px 100%,
+    0 50%
+  );
 }
 .power.stop {
   color: #fff;

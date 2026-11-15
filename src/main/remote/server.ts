@@ -13,6 +13,8 @@ export interface RemoteHandlers {
 }
 
 export const REMOTE_PORT = 47821
+/** Loopback-only port the Cloudflare tunnel forwards to. Never reachable from the network directly. */
+export const TUNNEL_PORT = 47822
 const MAX_BODY = 8 * 1024
 const MAX_PHONES = 5
 const MAX_FAILS = 10
@@ -35,14 +37,16 @@ export function isPrivateAddress(raw: string): boolean {
   )
 }
 
-/** Guards against DNS rebinding: the Host header must be a local name or a private IP. */
-export function isAllowedHost(header: string | undefined): boolean {
+/** Guards against DNS rebinding: the Host header must be a local name or a private IP.
+ *  With allowTunnel, *.trycloudflare.com (the Cloudflare quick-tunnel domain) is also allowed. */
+export function isAllowedHost(header: string | undefined, allowTunnel = false): boolean {
   if (!header) return false
   const host = header
     .replace(/:\d+$/, '')
     .replace(/^\[|\]$/g, '')
     .toLowerCase()
-  return host === 'localhost' || host.endsWith('.local') || isPrivateAddress(host)
+  if (host === 'localhost' || host.endsWith('.local') || isPrivateAddress(host)) return true
+  return allowTunnel && /^[a-z0-9-]+\.trycloudflare\.com$/.test(host)
 }
 
 export function newToken(): string {
@@ -67,7 +71,9 @@ export class RemoteServer {
     token: string,
     private assistantName: () => string = () => 'Nova',
     /** With a certificate the page is served over https, which phones need to allow the microphone. */
-    private tls?: { key: string; cert: string }
+    private tls?: { key: string; cert: string },
+    /** Set on the tunnel-facing copy: allows trycloudflare hosts and keys rate limits by cf-connecting-ip. */
+    private viaTunnel = false
   ) {
     this.tokenDigest = digest(token)
   }
@@ -161,8 +167,13 @@ export class RemoteServer {
   }
 
   private handle(req: IncomingMessage, res: ServerResponse): void {
-    const ip = req.socket.remoteAddress ?? ''
-    if (!isPrivateAddress(ip) || !isAllowedHost(req.headers.host))
+    const remoteIp = req.socket.remoteAddress ?? ''
+    // Through the tunnel every request arrives from localhost; Cloudflare's header carries the real phone.
+    const ip =
+      this.viaTunnel && typeof req.headers['cf-connecting-ip'] === 'string'
+        ? req.headers['cf-connecting-ip']
+        : remoteIp
+    if (!isPrivateAddress(remoteIp) || !isAllowedHost(req.headers.host, this.viaTunnel))
       return this.json(res, 403, { error: 'Not allowed' })
     const path = (req.url ?? '/').split('?')[0]
 

@@ -10,8 +10,10 @@ import {
   newToken,
   REMOTE_PORT,
   RemoteServer,
+  TUNNEL_PORT,
   type RemoteHandlers
 } from './server'
+import { ensureCloudflared, Tunnel } from './tunnel'
 
 const tokenFile = (): string => join(app.getPath('userData'), 'remote-token.bin')
 const certFile = (): string => join(app.getPath('userData'), 'remote-cert.bin')
@@ -62,24 +64,45 @@ export class RemoteManager {
   private server: RemoteServer | null = null
   private error = ''
   private certIps: string[] = []
+  // The "anywhere" link: a plain-HTTP copy on loopback plus a Cloudflare quick tunnel in front.
+  private publicServer: RemoteServer | null = null
+  private tunnel: Tunnel | null = null
+  private publicUrl: string | null = null
+  private publicError = ''
+  private publicStarting: Promise<void> | null = null
+  private dataDir = ''
 
   constructor(
     private handlers: RemoteHandlers,
-    private assistantName: () => string
-  ) {}
+    private assistantName: () => string,
+    /** Where cloudflared is kept (the app's userData folder). */
+    dataDir = ''
+  ) {
+    this.dataDir = dataDir || app.getPath('userData')
+  }
 
   broadcast(e: AgentEvent): void {
     this.server?.broadcast(e)
+    this.publicServer?.broadcast(e)
   }
 
   async sync(enabled: boolean): Promise<void> {
     if (!enabled) {
       this.server?.close()
       this.server = null
+      this.publicServer?.close()
+      this.publicServer = null
+      this.tunnel?.stop()
+      this.tunnel = null
+      this.publicUrl = null
+      this.publicError = ''
       this.error = ''
       return
     }
-    if (this.server?.listening) return
+    if (this.server?.listening) {
+      void this.ensurePublic()
+      return
+    }
     try {
       const tls = await loadCert(lanAddress())
       this.certIps = tls.ips
@@ -90,6 +113,7 @@ export class RemoteManager {
       await server.listen(REMOTE_PORT)
       this.server = server
       this.error = ''
+      void this.ensurePublic()
     } catch (e) {
       this.server = null
       const msg = e instanceof Error ? e.message : ''
@@ -99,14 +123,75 @@ export class RemoteManager {
     }
   }
 
+  /** Starts (once) the loopback server and Cloudflare tunnel that make the "anywhere" link. */
+  private async ensurePublic(): Promise<void> {
+    if (this.publicServer?.listening && this.tunnel?.url) return
+    if (this.publicStarting) return this.publicStarting
+    this.publicStarting = (async () => {
+      try {
+        if (!this.publicServer?.listening) {
+          const server = new RemoteServer(
+            this.handlers,
+            loadToken(false),
+            this.assistantName,
+            undefined,
+            true
+          )
+          await server.listen(TUNNEL_PORT, '127.0.0.1')
+          this.publicServer = server
+        }
+        if (!this.tunnel) {
+          const tunnel = new Tunnel(`http://127.0.0.1:${TUNNEL_PORT}`, () => {
+            this.publicUrl = null
+            this.publicError = 'The anywhere link dropped. It restarts with Nova.'
+          })
+          this.tunnel = tunnel
+        }
+        const exe = await ensureCloudflared(this.dataDir)
+        this.publicUrl = await this.tunnel.start(exe)
+        this.publicError = ''
+      } catch (e) {
+        this.publicUrl = null
+        this.publicError =
+          e instanceof Error && /Download failed|ENOENT|EACCES/.test(e.message)
+            ? 'The anywhere link could not start. Check the internet connection and try again.'
+            : e instanceof Error
+              ? e.message
+              : 'The anywhere link could not start.'
+      } finally {
+        this.publicStarting = null
+      }
+    })()
+    return this.publicStarting
+  }
+
   async reset(): Promise<void> {
-    if (!this.server) return
-    this.server.setToken(loadToken(true))
+    const token = loadToken(true)
+    this.server?.setToken(token)
+    this.publicServer?.setToken(token)
   }
 
   async info(): Promise<RemoteInfo> {
+    const phones = (this.server?.phones ?? 0) + (this.publicServer?.phones ?? 0)
+    // The token can throw when secure storage is missing; the link just stays hidden then.
+    let publicUrl: string | null = null
+    if (this.publicUrl) {
+      try {
+        publicUrl = `${this.publicUrl}/#t=${loadToken(false)}`
+      } catch {
+        publicUrl = null
+      }
+    }
+    const anywhere = { publicUrl, publicError: this.publicError || undefined }
     if (!this.server)
-      return { enabled: false, url: null, qr: null, phones: 0, error: this.error || undefined }
+      return {
+        enabled: false,
+        url: null,
+        qr: null,
+        phones,
+        ...anywhere,
+        error: this.error || undefined
+      }
     const ip = lanAddress()
     // The PC moved to another network: make a certificate that covers the new address.
     if (ip && !this.certIps.includes(ip)) {
@@ -114,14 +199,22 @@ export class RemoteManager {
       this.server = null
       await this.sync(true)
       if (!this.server)
-        return { enabled: false, url: null, qr: null, phones: 0, error: this.error || undefined }
+        return {
+          enabled: false,
+          url: null,
+          qr: null,
+          phones,
+          ...anywhere,
+          error: this.error || undefined
+        }
     }
     if (!ip)
       return {
         enabled: true,
         url: null,
         qr: null,
-        phones: this.server.phones,
+        phones,
+        ...anywhere,
         error: 'No Wi-Fi or network found. Connect this PC to your home network.'
       }
     // The token sits after "#" so it is never sent to any server or written in a log.
@@ -134,12 +227,18 @@ export class RemoteManager {
         width: 220,
         color: { dark: '#04121c', light: '#e7ecf5' }
       }),
-      phones: this.server.phones
+      phones,
+      ...anywhere
     }
   }
 
   close(): void {
     this.server?.close()
     this.server = null
+    this.publicServer?.close()
+    this.publicServer = null
+    this.tunnel?.stop()
+    this.tunnel = null
+    this.publicUrl = null
   }
 }
