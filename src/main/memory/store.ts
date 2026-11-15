@@ -55,6 +55,18 @@ export class MemoryStore {
     return { ok: true, fact: this.list().at(-1) }
   }
 
+  /** Rewrites a fact's text. Same cleaning rules as add(); refuses duplicates and blanks. */
+  update(id: number, text: string): { ok: boolean; reason?: string } {
+    const clean = text.replace(/\s+/g, ' ').trim().slice(0, MAX_FACT_LENGTH)
+    if (!clean) return { ok: false, reason: 'Empty fact.' }
+    const dup = this.list().find((f) => f.id !== id && f.text.toLowerCase() === clean.toLowerCase())
+    if (dup) return { ok: false, reason: 'Already remembered.' }
+    this.db.run('UPDATE facts SET text = ? WHERE id = ?', [clean, id])
+    const changed = this.db.getRowsModified() > 0
+    if (changed) this.save()
+    return changed ? { ok: true } : { ok: false, reason: 'No such fact.' }
+  }
+
   remove(id: number): boolean {
     this.db.run('DELETE FROM facts WHERE id = ?', [id])
     const changed = this.db.getRowsModified() > 0

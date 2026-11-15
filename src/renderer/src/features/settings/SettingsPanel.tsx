@@ -45,6 +45,9 @@ export function SettingsPanel({
   const [keyMsg, setKeyMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([])
   const [facts, setFacts] = useState<Fact[]>([])
+  const [factQuery, setFactQuery] = useState('')
+  const [editingFact, setEditingFact] = useState<{ id: number; text: string } | null>(null)
+  const [factError, setFactError] = useState('')
   const [app, setApp] = useState({ name: '', path: '' })
   const [ollama, setOllama] = useState<{ checking?: boolean; models?: string[]; error?: string }>(
     {}
@@ -479,6 +482,36 @@ export function SettingsPanel({
             </div>
           </div>
         )}
+        {remote?.enabled && (
+          <div className="phone-pair">
+            <h3>Anywhere link</h3>
+            <p className="hint">
+              Works on any network, not just home Wi-Fi. Anyone with this link and the pairing code
+              can talk to Nova, so keep it private. The address changes each time Nova starts.
+            </p>
+            {remote.publicError && <p className="error">{remote.publicError}</p>}
+            {remote.publicUrl && (
+              <>
+                <p className="hint">
+                  <code>{remote.publicUrl}</code>
+                </p>
+                <div className="row">
+                  <button
+                    className="btn"
+                    onClick={() =>
+                      void navigator.clipboard.writeText(remote.publicUrl ?? '').catch(() => {})
+                    }
+                  >
+                    Copy anywhere link
+                  </button>
+                </div>
+              </>
+            )}
+            {!remote.publicUrl && !remote.publicError && (
+              <p className="hint">Starting the tunnel…</p>
+            )}
+          </div>
+        )}
       </section>
 
       <section id="sec-connectors">
@@ -546,21 +579,80 @@ export function SettingsPanel({
           What Nova remembers about you. It is stored only on this PC and sent to Claude with each
           message.
         </p>
+        {facts.length > 5 && (
+          <input
+            className="text-input"
+            placeholder="Search memories…"
+            value={factQuery}
+            onChange={(e) => setFactQuery(e.target.value)}
+          />
+        )}
         {facts.length === 0 && (
           <p className="hint">Nothing yet. Tell Nova about yourself and it will remember.</p>
         )}
-        {facts.map((f) => (
-          <div key={f.id} className="list-row">
-            <span>{f.text}</span>
-            <button
-              className="icon-btn"
-              aria-label={`Forget: ${f.text}`}
-              onClick={async () => setFacts(await nova.deleteFact(f.id))}
-            >
-              ✕
-            </button>
-          </div>
-        ))}
+        {facts
+          .filter((f) => f.text.toLowerCase().includes(factQuery.trim().toLowerCase()))
+          .map((f) =>
+            editingFact?.id === f.id ? (
+              <div key={f.id} className="list-row">
+                <input
+                  className="text-input"
+                  value={editingFact.text}
+                  autoFocus
+                  onChange={(e) => setEditingFact({ id: f.id, text: e.target.value })}
+                  onKeyDown={async (e) => {
+                    if (e.key === 'Enter') {
+                      try {
+                        setFacts(await nova.updateFact(f.id, editingFact.text))
+                        setEditingFact(null)
+                        setFactError('')
+                      } catch (err) {
+                        setFactError(err instanceof Error ? err.message : 'Not saved.')
+                      }
+                    }
+                    if (e.key === 'Escape') setEditingFact(null)
+                  }}
+                />
+                <button
+                  className="icon-btn"
+                  aria-label="Save memory"
+                  onClick={async () => {
+                    try {
+                      setFacts(await nova.updateFact(f.id, editingFact.text))
+                      setEditingFact(null)
+                      setFactError('')
+                    } catch (err) {
+                      setFactError(err instanceof Error ? err.message : 'Not saved.')
+                    }
+                  }}
+                >
+                  ✓
+                </button>
+              </div>
+            ) : (
+              <div key={f.id} className="list-row">
+                <span>{f.text}</span>
+                <button
+                  className="icon-btn"
+                  aria-label={`Edit: ${f.text}`}
+                  onClick={() => {
+                    setEditingFact({ id: f.id, text: f.text })
+                    setFactError('')
+                  }}
+                >
+                  ✎
+                </button>
+                <button
+                  className="icon-btn"
+                  aria-label={`Forget: ${f.text}`}
+                  onClick={async () => setFacts(await nova.deleteFact(f.id))}
+                >
+                  ✕
+                </button>
+              </div>
+            )
+          )}
+        {factError && <p className="hint">{factError}</p>}
       </section>
     </aside>
   )

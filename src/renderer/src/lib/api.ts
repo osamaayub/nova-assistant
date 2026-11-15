@@ -211,6 +211,7 @@ function browserFake(): NovaApi {
         enabled: settings.remote,
         url: settings.remote ? 'http://192.168.1.20:47821/#t=preview' : null,
         qr: null,
+        publicUrl: settings.remote ? 'https://preview.trycloudflare.com/#t=preview' : null,
         phones: 0
       }
     },
@@ -247,6 +248,14 @@ function browserFake(): NovaApi {
     },
     async deleteFact(id) {
       facts = facts.filter((f) => f.id !== id)
+      return facts
+    },
+    async updateFact(id, text) {
+      const clean = text.replace(/\s+/g, ' ').trim().slice(0, 300)
+      if (!clean) throw new Error('Empty fact.')
+      if (facts.some((f) => f.id !== id && f.text.toLowerCase() === clean.toLowerCase()))
+        throw new Error('Already remembered.')
+      facts = facts.map((f) => (f.id === id ? { ...f, text: clean } : f))
       return facts
     }
   }

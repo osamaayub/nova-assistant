@@ -69,6 +69,13 @@ describe('phone link: who may connect', () => {
     expect(isAllowedHost(undefined)).toBe(false)
   })
 
+  it('allows only the Cloudflare tunnel domain when the tunnel is on', () => {
+    expect(isAllowedHost('abc-123.trycloudflare.com', true)).toBe(true)
+    expect(isAllowedHost('abc-123.trycloudflare.com')).toBe(false)
+    expect(isAllowedHost('evil.trycloudflare.com.evil.com', true)).toBe(false)
+    expect(isAllowedHost('anything.example.com', true)).toBe(false)
+  })
+
   it('answers a wrong Host header with 403', async () => {
     const { base } = await start()
     const status = await new Promise<number>((resolve, reject) => {

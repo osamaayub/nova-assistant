@@ -21,7 +21,7 @@ import { SatPanel } from './features/monitor/SatPanel'
 import { SettingsPanel } from './features/settings/SettingsPanel'
 import { Listener } from './features/voice/listener'
 import { Speaker } from './features/voice/speaker'
-import { WakeListener } from './features/voice/wakeWord'
+import { WakeListener, wakeChime } from './features/voice/wakeWord'
 import { nova } from './lib/api'
 import { SentenceSplitter } from './lib/sentences'
 import { useWide } from './lib/useWide'
@@ -192,6 +192,7 @@ export default function App(): React.JSX.Element {
     const wake = new WakeListener(
       (audio) => listener.transcribe(audio),
       (command) => {
+        wakeChime()
         void nova.showWindow()
         if (command) send(command)
         else void captureCommand()
