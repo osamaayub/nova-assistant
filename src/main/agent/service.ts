@@ -4,6 +4,7 @@ import type { AgentEvent, Settings } from '../../shared/types'
 import type { MemoryStore } from '../memory/store'
 import { getSettings, readApiKey } from '../settings/store'
 import { runTurn } from './loop'
+import { pickFacts } from './memory-recall'
 import { buildSystemPrompt } from './prompt'
 import { serialize } from './serialize'
 import { withSearchSetting } from './service-helpers'
@@ -105,13 +106,19 @@ export class AgentService {
         : SPECIALISTS
       const result = await runTurn({
         provider,
-        system: buildSystemPrompt(settings, this.memory.list(), new Date(), this.platform.os, {
-          mode: settings.agentMode,
-          canSearch: provider.canSearchWeb && settings.webSearch,
-          team: team
-            ? specialists.map((s) => ({ tool: s.tool, name: s.name, when: s.when }))
-            : undefined
-        }),
+        system: buildSystemPrompt(
+          settings,
+          pickFacts(this.memory.list(), userText),
+          new Date(),
+          this.platform.os,
+          {
+            mode: settings.agentMode,
+            canSearch: provider.canSearchWeb && settings.webSearch,
+            team: team
+              ? specialists.map((s) => ({ tool: s.tool, name: s.name, when: s.when }))
+              : undefined
+          }
+        ),
         history: this.history,
         userText,
         tools: withSearchSetting(
