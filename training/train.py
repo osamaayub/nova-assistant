@@ -12,6 +12,8 @@ It writes a .gguf file and a Modelfile into ./nova-brain-gguf. Download that fol
 
 import inspect
 import json
+import os
+import shutil
 import sys
 
 from unsloth import FastLanguageModel
@@ -80,4 +82,14 @@ trainer = train_on_responses_only(
 trainer.train()
 
 model.save_pretrained_gguf("nova-brain-gguf", tok, quantization_method="q4_k_m")
+
+# Free Colab wipes its disk when the session resets, and it has done so twice before the model
+# reached the PC. Copy the small GGUF folder to Google Drive right away (mount Drive first).
+DRIVE_DIR = "/content/drive/MyDrive"
+if os.path.isdir(DRIVE_DIR):
+    target = os.path.join(DRIVE_DIR, "nova-brain-gguf")
+    shutil.copytree("nova-brain-gguf_gguf", target, dirs_exist_ok=True)
+    print("Saved a copy to Google Drive:", target)
+else:
+    print("Google Drive is not mounted. Download the nova-brain-gguf_gguf folder now.")
 print("Done. Download the nova-brain-gguf folder.")
