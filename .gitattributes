@@ -1,0 +1,6 @@
+# Keep the repository on Unix line endings so lint and formatting agree on every OS.
+* text=auto eol=lf
+*.ico binary
+*.icns binary
+*.png binary
+*.jpg binary

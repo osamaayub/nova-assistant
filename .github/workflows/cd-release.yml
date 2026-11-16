@@ -1,0 +1,176 @@
+name: CD - Release Windows installer
+
+# Verify, build and publish the Windows installer as a GitHub Release.
+#
+#   Run it from the Actions tab ("Run workflow", on main): bumps the version, builds, commits the
+#   bump, tags it and publishes. Choose patch, minor or major.
+#   Or push a tag like v1.2.2 for a version already in package.json: it must match, or the run stops.
+#
+# Three stages, each with the least access it needs:
+#   verify   runs CI (lint, typecheck, tests, builds). Nothing is built if it fails.
+#   build    runs npm install and electron-builder with a read-only token and no stored credentials.
+#   publish  the only job that can write to the repo. It never runs project code.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      prerelease:
+        description: Mark as prerelease
+        type: boolean
+        default: false
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+# Never cancel a release halfway; a second one waits its turn.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify (run CI)
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    name: Build installer
+    needs: verify
+    runs-on: windows-latest
+    timeout-minutes: 30
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Only release from main (button) or a tag
+        if: ${{ github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main' }}
+        shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          echo "::error::Run this workflow on main. It was started on $REF_NAME."
+          exit 1
+      - name: Check out the code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Node from .nvmrc
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies (with Electron, needed for packaging)
+        run: npm ci
+      - name: Bump the version
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: npm run version:bump -- "$BUMP"
+      - name: Work out the release tag
+        id: version
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "$EVENT" = "push" ] && [ "$REF_NAME" != "v$VERSION" ]; then
+            echo "::error::Tag $REF_NAME does not match package.json version $VERSION. Bump the version first, or use Run workflow."
+            exit 1
+          fi
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Build the installer
+        run: npm run build:win
+      - name: Write SHA-256 checksums
+        shell: bash
+        working-directory: dist
+        run: sha256sum ./*-setup.exe | sed 's# \./# #' > SHA256SUMS.txt
+      - name: Upload the installer files
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            dist/*-setup.exe
+            dist/*.blockmap
+            dist/latest.yml
+            dist/SHA256SUMS.txt
+      - name: Upload the version bump
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: version-bump
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            package.json
+            package-lock.json
+            src/main/version.ts
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+        with:
+          fetch-tags: true
+      - name: Download the installer files
+        uses: actions/download-artifact@v4
+        with:
+          name: installer
+          path: dist
+      - name: Download the version bump
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: version-bump
+          path: .
+      - name: Commit the version bump and tag it
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        env:
+          TAG: ${{ needs.build.outputs.tag }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "::error::Tag $TAG already exists."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json src/main/version.ts
+          git commit -m "Release $TAG"
+          git push origin "HEAD:$BRANCH"
+          git tag "$TAG"
+          git push origin "$TAG"
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.build.outputs.tag }}
+          name: Nova ${{ needs.build.outputs.tag }}
+          generate_release_notes: true
+          prerelease: ${{ inputs.prerelease || false }}
+          fail_on_unmatched_files: true
+          files: |
+            dist/*-setup.exe
+            dist/*.blockmap
+            dist/latest.yml
+            dist/SHA256SUMS.txt
+          body: |
+            **Download `nova-assistant-*-setup.exe` below, run it, then pick a brain in Settings.**
+
+            - Hold Space to talk, Alt+Space to show or hide Nova.
+            - The first voice use downloads the Whisper speech model (about 80 MB) once.
+            - Windows may show "Windows protected your PC" because the installer is not code-signed yet. Click **More info**, then **Run anyway**.
+            - To check your download, run `certutil -hashfile <installer> SHA256` and compare it with `SHA256SUMS.txt`.

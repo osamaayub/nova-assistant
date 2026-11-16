@@ -1,18 +1,119 @@
 name: CI
+
+# Runs on every pull request and every push to main. The release workflow calls it too, so an
+# installer is never built from code that did not pass. Make the "CI passed" check the one
+# required check in branch protection: it is green only when every job below is.
 on:
+  pull_request:
   push:
     branches: [main]
-  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# None of these jobs need the Electron binary, so every install uses --ignore-scripts. It is
+# faster and keeps third-party install scripts from running in CI.
 jobs:
-  check:
-    runs-on: windows-latest
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Check out the code
+        uses: actions/checkout@v4
         with:
-          node-version: 22
+          persist-credentials: false
+      - name: Set up Node from .nvmrc
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
           cache: npm
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
-      - run: npx electron-vite build
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: Run ESLint
+        run: npm run lint
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Node from .nvmrc
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: Typecheck main process and window
+        run: npm run typecheck
+
+  test:
+    name: Unit tests (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Node from .nvmrc
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: Run Vitest
+        run: npm test
+
+  build:
+    name: Build (desktop and web)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Node from .nvmrc
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: Build the desktop app
+        run: npx electron-vite build
+      - name: Check the desktop CSP stays strict
+        run: node scripts/check-csp.mjs desktop
+      - name: Build the web preview (as Vercel does)
+        run: npx electron-vite build
+        env:
+          VERCEL: '1'
+      - name: Check the web CSP allows local Ollama
+        run: node scripts/check-csp.mjs web
+
+  ci-passed:
+    name: CI passed
+    if: ${{ always() }}
+    needs: [lint, typecheck, test, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail unless every job succeeded
+        run: |
+          echo "lint=${{ needs.lint.result }} typecheck=${{ needs.typecheck.result }} test=${{ needs.test.result }} build=${{ needs.build.result }}"
+          test "${{ needs.lint.result }}" = "success" \
+            && test "${{ needs.typecheck.result }}" = "success" \
+            && test "${{ needs.test.result }}" = "success" \
+            && test "${{ needs.build.result }}" = "success"
