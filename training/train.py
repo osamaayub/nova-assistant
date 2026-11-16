@@ -19,7 +19,9 @@ from unsloth.chat_templates import train_on_responses_only
 from datasets import Dataset
 from trl import SFTConfig, SFTTrainer
 
-BASE = "unsloth/Qwen2.5-3B-Instruct"  # small enough to run on a 16 GB PC; supports tool calls
+# Apache 2.0 (safe to sell, unlike Qwen2.5-3B). The 2507 Instruct build has no thinking mode,
+# which keeps tool-call replies short. About 2.5 GB after q4_k_m, fine on a 16 GB PC.
+BASE = "unsloth/Qwen3-4B-Instruct-2507"
 TRAIN_FILE = sys.argv[1] if len(sys.argv) > 1 else "train.jsonl"
 MAX_LEN = 3072  # the Nova system prompt alone is about 1,100 tokens
 
@@ -40,7 +42,11 @@ with open(TRAIN_FILE, encoding="utf-8") as f:
     for line in f:
         ex = json.loads(line)
         text = tok.apply_chat_template(ex["messages"], tools=ex["tools"], tokenize=False)
+        # Qwen3's template adds an empty think block to assistant turns. Drop it so the model
+        # never learns to print <think></think> into the replies Nova speaks aloud.
+        text = text.replace("<think>\n\n</think>\n\n", "")
         rows.append({"text": text})
+assert not any("<think>" in r["text"] for r in rows), "think tags left in the training text"
 print("example 0 as the model sees it:\n", rows[0]["text"][-900:])
 dataset = Dataset.from_list(rows)
 

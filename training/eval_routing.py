@@ -1,6 +1,6 @@
 """Scores a model on Nova's held-out prompts. No dependencies; needs Ollama running.
 
-  python training/eval_routing.py qwen2.5:3b        # the base model
+  python training/eval_routing.py qwen3:4b-instruct-2507-q4_K_M   # the base model
   python training/eval_routing.py nova-brain        # after fine-tuning
 
 For each prompt in training/data/eval.jsonl it sends Nova's real system prompt and tools, then
