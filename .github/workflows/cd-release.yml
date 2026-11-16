@@ -55,11 +55,11 @@ jobs:
           echo "::error::Run this workflow on main. It was started on $REF_NAME."
           exit 1
       - name: Check out the code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Set up Node from .nvmrc
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -91,7 +91,7 @@ jobs:
         working-directory: dist
         run: sha256sum ./*-setup.exe | sed 's# \./# #' > SHA256SUMS.txt
       - name: Upload the installer files
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: installer
           if-no-files-found: error
@@ -103,7 +103,7 @@ jobs:
             dist/SHA256SUMS.txt
       - name: Upload the version bump
         if: ${{ github.event_name == 'workflow_dispatch' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: version-bump
           if-no-files-found: error
@@ -122,17 +122,17 @@ jobs:
       contents: write
     steps:
       - name: Check out the code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-tags: true
       - name: Download the installer files
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: installer
           path: dist
       - name: Download the version bump
         if: ${{ github.event_name == 'workflow_dispatch' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: version-bump
           path: .
@@ -155,7 +155,7 @@ jobs:
           git tag "$TAG"
           git push origin "$TAG"
       - name: Publish the release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.build.outputs.tag }}
           name: Nova ${{ needs.build.outputs.tag }}
