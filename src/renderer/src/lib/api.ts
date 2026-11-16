@@ -46,7 +46,7 @@ function browserFake(): NovaApi {
     provider: 'ollama',
     model: 'claude-sonnet-5-5',
     ollamaUrl: 'http://127.0.0.1:11434',
-    ollamaModel: 'qwen3:8b',
+    ollamaModel: 'qwen3:4b-instruct', // 2.5 GB, runs on a 16 GB laptop; qwen3:8b is too big for many PCs
     agentMode: 'team',
     character: 'nova',
     avatar: 'core',
