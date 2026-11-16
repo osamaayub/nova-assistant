@@ -27,6 +27,35 @@ export interface Platform {
   pressEnter(app: 'whatsapp'): Promise<boolean>
 }
 
+/** Resolves a host name to its IP addresses. Tests pass a fake so nothing touches DNS. */
+export type HostLookup = (hostname: string) => Promise<string[]>
+
+/** One passage found in the user's documents. */
+export interface DocHit {
+  /** Where it came from, e.g. "Documents/notes/trip.md". Never a full disk path. */
+  display: string
+  /** Which passage of that file (1 is the start). */
+  part: number
+  text: string
+}
+
+export interface DocSearchResult {
+  hits: DocHit[]
+  /** How many files are searchable. */
+  files: number
+  /** Meaning-based search worked for this query, or only keywords did. */
+  semantic: boolean
+  /** A one-line suggestion when search could be better (for example a missing model). */
+  hint?: string
+  /** The scan stopped early (very large folders), so some files may be missing. */
+  partial?: boolean
+}
+
+/** Search over the user's own documents. Read-only. Implemented in src/main/rag. */
+export interface DocSearch {
+  search(query: string): Promise<DocSearchResult>
+}
+
 export interface ToolContext {
   platform: Platform
   memory: MemoryStore
@@ -36,6 +65,10 @@ export interface ToolContext {
   now(): Date
   /** Web requests a tool makes. Tests pass a fake so nothing touches the network. */
   fetch?: typeof fetch
+  /** DNS lookups made by tools that read the web. Tests pass a fake. */
+  lookup?: HostLookup
+  /** Search over the user's documents. Absent in tests that do not need it. */
+  docs?: DocSearch
 }
 
 export interface ToolResult {
