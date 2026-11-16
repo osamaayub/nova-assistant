@@ -5,6 +5,12 @@ function ollamaOrigin(url: string): string {
   return u.origin
 }
 
+/** One plain sentence that tells the user the exact fix for a failed browser-to-Ollama call. */
+function cannotReachOllama(): string {
+  const site = typeof location !== 'undefined' ? location.origin : 'this site'
+  return `Cannot reach Ollama. Open Ollama, set OLLAMA_ORIGINS to ${site}, restart it, and allow local network access if the browser asks.`
+}
+
 function stripThinking(text: string): string {
   return text.replace(/<think>[\s\S]*?(<\/think>|$)/g, '')
 }
@@ -124,7 +130,7 @@ function browserFake(): NovaApi {
             turnId,
             message:
               e instanceof TypeError
-                ? 'Cannot reach Ollama. Start it on your PC and add this site to OLLAMA_ORIGINS.'
+                ? cannotReachOllama()
                 : e instanceof Error
                   ? e.message
                   : 'Chat failed. Try again.'
@@ -190,10 +196,7 @@ function browserFake(): NovaApi {
         const data = (await res.json()) as { models?: { name: string }[] }
         return { ok: true as const, models: (data.models ?? []).map((m) => m.name) }
       } catch {
-        return {
-          ok: false as const,
-          error: 'Cannot reach Ollama. Is it running, and does OLLAMA_ORIGINS allow this site?'
-        }
+        return { ok: false as const, error: cannotReachOllama() }
       }
     },
     async listMcp() {
