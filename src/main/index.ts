@@ -21,6 +21,7 @@ import { RemoteManager } from './remote/manager'
 import { fetchHeadlines } from './news'
 import { McpManager } from './mcp/manager'
 import { MemoryStore } from './memory/store'
+import { createRagServices } from './rag/services'
 import { createPlatform } from './platform'
 import { listOllamaModels } from './agent/providers/ollama'
 import {
@@ -150,7 +151,15 @@ app.whenReady().then(async () => {
 
   const mcp = new McpManager()
   mcp.sync(getSettings().mcpServers)
-  const agent = new AgentService(platform, memory, emit, undefined, mcp)
+  // Search over the user's own documents, and recall of memories by meaning. Both use the
+  // user's local Ollama for embeddings when it has the model, and fall back to keywords.
+  const rag = await createRagServices({
+    platform,
+    file: join(app.getPath('userData'), 'nova-docs.sqlite'),
+    wasmPath: require.resolve('sql.js/dist/sql-wasm.wasm'),
+    ollamaUrl: () => getSettings().ollamaUrl
+  })
+  const agent = new AgentService(platform, memory, emit, undefined, mcp, rag)
 
   // A paired phone can do exactly what the window can: send, stop, start over, answer "Allow?".
   remote = new RemoteManager(

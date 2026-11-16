@@ -4,7 +4,8 @@ import type { AgentEvent, Settings } from '../../shared/types'
 import type { MemoryStore } from '../memory/store'
 import { getSettings, readApiKey } from '../settings/store'
 import { runTurn } from './loop'
-import { pickFacts } from './memory-recall'
+import { pickFactsSemantic } from './memory-recall'
+import type { RagServices } from '../rag/services'
 import { buildSystemPrompt } from './prompt'
 import { serialize } from './serialize'
 import { withSearchSetting } from './service-helpers'
@@ -47,7 +48,8 @@ export class AgentService {
     private memory: MemoryStore,
     private emit: (e: AgentEvent) => void,
     private makeProvider: (s: Settings) => Provider = (s) => createProvider(s, readApiKey()),
-    private mcp?: McpManager
+    private mcp?: McpManager,
+    private rag?: RagServices
   ) {}
 
   async send(text: string): Promise<void> {
@@ -67,7 +69,8 @@ export class AgentService {
         platform: this.platform,
         memory: this.memory,
         customApps: settings.customApps,
-        now: () => new Date()
+        now: () => new Date(),
+        docs: this.rag?.docs
       }
       // Agents can work side by side, but the window shows one "Allow?" at a time. Others wait.
       const confirm = serialize(
@@ -108,7 +111,12 @@ export class AgentService {
         provider,
         system: buildSystemPrompt(
           settings,
-          pickFacts(this.memory.list(), userText),
+          await pickFactsSemantic(
+            this.memory.list(),
+            userText,
+            this.rag?.embedder ?? null,
+            this.rag?.factVectors ?? new Map()
+          ),
           new Date(),
           this.platform.os,
           {
