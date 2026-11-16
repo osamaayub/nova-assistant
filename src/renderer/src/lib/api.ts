@@ -20,8 +20,29 @@ function stripThinking(text: string): string {
  * preview, design work) this fake answers: chat goes straight to a local Ollama over HTTP,
  * everything else is a harmless stub. PC tools cannot run in a browser.
  */
+const SAVED_KEY = 'nova-web-settings'
+
+/** Settings the user changed in this browser. Nothing secret is stored: the preview has no keys. */
+function loadSaved(): Partial<PublicSettings> {
+  try {
+    const raw = localStorage.getItem(SAVED_KEY)
+    const parsed: unknown = raw ? JSON.parse(raw) : null
+    return parsed && typeof parsed === 'object' ? (parsed as Partial<PublicSettings>) : {}
+  } catch {
+    return {} // storage blocked or corrupt: start from the defaults
+  }
+}
+
+function persistSettings(s: PublicSettings): void {
+  try {
+    localStorage.setItem(SAVED_KEY, JSON.stringify(s))
+  } catch {
+    // storage blocked: the settings still work until the page reloads
+  }
+}
+
 function browserFake(): NovaApi {
-  let settings: PublicSettings = {
+  const defaults: PublicSettings = {
     provider: 'ollama',
     model: 'claude-sonnet-5-5',
     ollamaUrl: 'http://127.0.0.1:11434',
@@ -46,6 +67,12 @@ function browserFake(): NovaApi {
     hasApiKey: true,
     keyStorage: 'encrypted'
   }
+  let settings: PublicSettings = {
+    ...defaults,
+    ...loadSaved(),
+    hasApiKey: true,
+    keyStorage: 'encrypted'
+  }
   let facts: Fact[] = [{ id: 1, text: 'Is learning agentic engineering', createdAt: '2026-11-08' }]
   const listeners = new Set<(e: AgentEvent) => void>()
   const emit = (e: AgentEvent): void => listeners.forEach((l) => l(e))
@@ -56,6 +83,15 @@ function browserFake(): NovaApi {
     async send(text) {
       const turnId = crypto.randomUUID()
       emit({ type: 'start', turnId })
+      if (settings.provider !== 'ollama') {
+        emit({
+          type: 'error',
+          turnId,
+          message:
+            'The web preview only works with Free local AI (Ollama). Pick it under Brain, or use the desktop app.'
+        })
+        return
+      }
       abort = new AbortController()
       let reply = ''
       let shown = ''
@@ -174,6 +210,7 @@ function browserFake(): NovaApi {
     },
     async saveSettings(p: Partial<Settings>) {
       settings = { ...settings, ...p }
+      persistSettings(settings)
       return settings
     },
     async saveApiKey() {
