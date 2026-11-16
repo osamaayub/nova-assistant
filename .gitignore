@@ -9,3 +9,7 @@ out
 build/
 .vercel
 .env*
+
+training/data/
+__pycache__/
+.devin

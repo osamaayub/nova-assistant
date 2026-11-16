@@ -30,6 +30,7 @@ This file is the source of truth for **what** we build. `docs/plan.md` says **in
 | Voice in | Whisper base.en (transformers.js) | Runs in a web worker on the PC |
 | Voice out | Windows voices or Kokoro 82M | Kokoro runs locally in a web worker |
 | Memory | SQLite (sql.js) | Facts about the user, stored on the PC |
+| Retrieval | BM25 + local embeddings (Ollama `all-minilm`), SQLite (sql.js) | Search inside the owner's documents and recall memories by meaning. Falls back to keywords with no model |
 | Secrets | Electron `safeStorage` | The Claude key is encrypted with Windows and never reaches the window |
 | Tests | Vitest | Fake providers and a fake platform, no network, no Windows needed |
 
@@ -51,7 +52,7 @@ This file is the source of truth for **what** we build. `docs/plan.md` says **in
 |---|---|---|
 | **Nova (main)** | Talks to the user, decides who does the job, keeps memory | `ask_pc_agent`, `ask_files_agent`, `ask_research_agent`, `remember_fact`, `forget_fact`, `get_datetime` |
 | **PC agent** | Apps, websites, music, timers, PC health | `open_app`, `open_website`, `play_music`, `system_status`, `set_timer`, `get_datetime` |
-| **Files agent** | The user's folders, tidying Downloads | `list_folder`, `open_folder`, `organize_downloads` |
+| **Files agent** | The user's folders, searching inside their notes and documents, tidying Downloads | `list_folder`, `open_folder`, `search_documents`, `organize_downloads` |
 | **Research agent** | Current facts | Claude web search, `read_web_page`, `get_datetime` |
 
 Rules: a specialist sees only its task (not the chat), gets at most 6 steps, and reports back in 1–3 sentences with tool evidence and any blockers. Nova includes needed context in every handoff, waits for reports before starting dependent tasks, and checks results before reporting success. Only the main agent speaks to the user. "Team mode" can be turned off in Settings; then one agent has every tool.
@@ -65,6 +66,7 @@ Rules: a specialist sees only its task (not the chat), gets at most 6 steps, and
 | Files | Only inside Desktop, Documents, Downloads, Pictures, Music, Videos. No `..`. Never delete or overwrite |
 | Confirm | Moving files needs the owner's Allow click |
 | Memory | Never stores passwords, card numbers or secrets |
+| Documents | `search_documents` is read-only, covers Documents and Desktop only, follows no links, skips secret-looking files, and returns passages labelled as untrusted data |
 | Limits | 8 steps for the main agent, 6 per specialist |
 
 ## 7. Design
