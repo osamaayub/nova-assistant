@@ -2,7 +2,7 @@
 
 ## Reporting a problem
 
-Please do not open a public issue for a security problem. Use GitHub's private reporting: **Security → Report a vulnerability** on [the repository](https://github.com/osamaayub/nova-assistant/security). Include the steps to reproduce and the Nova version (Settings, or `package.json`).
+Please do not open a public issue for a security problem. Use GitHub's private reporting: **Security → Report a vulnerability** on [the repository](https://github.com/osamaayub/nova-assistant/security). Include the steps to reproduce and the Nova version (the release you downloaded, or `package.json`).
 
 You can expect a first reply within a week. Fixes ship in the next patch release.
 

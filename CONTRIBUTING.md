@@ -13,6 +13,8 @@ npm install
 npm run dev
 ```
 
+No Windows PC handy? The repo has a dev container (`.devcontainer/`) that installs Node 22 and the dependencies, so you can run lint and typecheck and edit code. The Electron window, voice and app launching still need Windows.
+
 ## Checks (all must pass before a PR)
 
 | Command | Does |

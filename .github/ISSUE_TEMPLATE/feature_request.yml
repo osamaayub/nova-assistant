@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest something Nova should do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: want
+    attributes:
+      label: What should Nova do?
+      description: Say it the way you would say it out loud, for example "Remind me when my download finishes".
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why do you need it?
+  - type: dropdown
+    id: changes
+    attributes:
+      label: Would it move, write, send or spend anything?
+      description: Those need an Allow step, and a tool that changes user data needs the owner's approval first.
+      options:
+        - No, it only reads or answers
+        - Yes, it changes something
+        - Not sure
+    validations:
+      required: true

@@ -10,6 +10,7 @@ coverage/
 build/
 .vercel
 .env*
+!.env.example
 
 training/data/
 __pycache__/
