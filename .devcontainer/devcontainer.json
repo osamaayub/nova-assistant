@@ -1,0 +1,10 @@
+{
+  "name": "Nova (lint, typecheck, tests)",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+  "postCreateCommand": "npm ci --ignore-scripts",
+  "customizations": {
+    "vscode": {
+      "extensions": ["dbaeumer.vscode-eslint", "esbenp.prettier-vscode"]
+    }
+  }
+}

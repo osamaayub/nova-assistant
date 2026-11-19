@@ -20,7 +20,7 @@ Hold a key, speak, and Nova answers out loud and acts on your PC: opens apps, ti
 
 ## Contents
 
-[Why Nova](#why-nova) · [Quick start](#quick-start) · [Architecture](#architecture) · [Agent design](#agent-design) · [Security model](#security-model) · [Brains](#brains) · [Web preview](#web-preview-vercel) · [Fine-tuning](#fine-tuning-experimental) · [Development](#development) · [Limitations](#limitations-and-roadmap)
+[Why Nova](#why-nova) · [Quick start](#quick-start) · [Architecture](#architecture) · [Agent design](#agent-design) · [Security model](#security-model) · [Brains](#brains) · [Web preview](#web-preview-vercel) · [Fine-tuning](#fine-tuning-experimental) · [Development](#development) · [Troubleshooting](#troubleshooting) · [Limitations](#limitations-and-roadmap)
 
 ## Why Nova
 
@@ -203,6 +203,18 @@ setx OLLAMA_ORIGINS "https://<your-site>.vercel.app"   # then restart Ollama
 
 Chrome may also ask for local network access: choose Allow. The web build adds `localhost` to its CSP (`electron.vite.config.ts`, only when `VERCEL` is set); the desktop app keeps the strict policy.
 
+### Run the web preview in Docker
+
+To host the browser version yourself instead of on Vercel:
+
+```bash
+docker compose up --build        # then open http://localhost:8080
+# or without compose:
+docker build -t nova-web . && docker run --rm -p 8080:8080 nova-web
+```
+
+The image builds the web version (`VERCEL=1`), checks its Content Security Policy, and serves it with nginx on port 8080 as a non-root user. Set `OLLAMA_ORIGINS` to the address you open it at (see above). To change the port, copy [`.env.example`](.env.example) to `.env` and set `NOVA_WEB_PORT`. This image is only the web preview: voice on Windows and opening apps need the desktop installer.
+
 ## Fine-tuning (experimental)
 
 [`training/`](training/) contains a pipeline that fine-tunes a small open model (Qwen3 4B Instruct 2507, Apache 2.0, QLoRA) to be a better team-mode main agent: choose the right specialist, write self-contained tasks, parallelize independent work, ask when information is missing, and keep replies short and spoken.
@@ -239,7 +251,7 @@ Coverage counts the Node side (`src/main` and `src/shared`): the agent loop, too
 
 ### Configuration
 
-Nova needs no environment variables or `.env` file. The brain, keys, voice and connectors are set in the app (**Settings**), and the Claude key is stored encrypted on your PC. The only build-time variable is `VERCEL=1`, which CI and Vercel set to build the web preview.
+Nova needs no environment variables or `.env` file. The brain, keys, voice and connectors are set in the app (**Settings**), and the Claude key is stored encrypted on your PC. The only build-time variable is `VERCEL=1`, which CI, Vercel and the Dockerfile set to build the web preview. [`.env.example`](.env.example) lists every variable the repo mentions, with what each does.
 
 ### CI/CD
 
@@ -295,6 +307,21 @@ A tool that changes user data, sends messages or spends money needs the owner's 
 ### Adding a brain
 
 Implement `Provider` in `src/main/agent/providers/`, convert to and from `Msg` inside it, and register it in `service.ts`. Nothing else should import it.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| Windows warns "unknown publisher" when you run the installer | The installer is not code-signed yet. Choose *More info*, then *Run anyway*. |
+| "Ollama is not running. Install it from ollama.com and open it, then try again." | Install [Ollama](https://ollama.com) and open it. In **Settings → Brain**, click *Check connection*. |
+| "`<model>` can't use tools. Pick a model like qwen3:8b or llama3.1:8b in Settings." | That model cannot call tools. Pull one that can, for example `ollama pull qwen3:8b`, and pick it in Settings. |
+| Replies are very slow, or Ollama runs out of memory | `qwen3:8b` wants 8 GB or more of free RAM. On a smaller or GPU-less PC use a 3B or 4B model (for example `qwen3:4b-instruct`), or switch to the free cloud brain. |
+| Nothing happens when you hold Space | Space only works while the Nova window is in front, you are not typing in a text box, and no panel such as Settings is open. Alt+Space shows or hides Nova from anywhere. On first use Nova downloads the Whisper model (about 80 MB), so the first start is slow. |
+| The web preview cannot reach Ollama | Set `OLLAMA_ORIGINS` to your site's address and restart Ollama (see [Web preview](#web-preview-vercel)). Allow Chrome's local network access prompt. |
+| Free cloud brain stops answering | It is rate-limited and depends on a third-party service. Try again later, or use Ollama or Claude. |
+| `npm test` fails in every test file with an error about reading `config` | A broken `node_modules`. Delete it and run `npm ci`. CI installs with `npm ci --ignore-scripts`. |
+
+Still stuck? Open an [issue](https://github.com/osamaayub/nova-assistant/issues/new/choose) with your Nova version, the brain you use and the one-line error Nova showed. Please never paste API keys.
 
 ## Limitations and roadmap
 

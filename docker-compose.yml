@@ -1,0 +1,12 @@
+# Runs the Nova web preview. See the README, "Run the web preview in Docker".
+#   docker compose up --build        then open http://localhost:8080
+services:
+  web:
+    build:
+      context: .
+      args:
+        VERCEL: '1'
+    image: nova-web
+    ports:
+      - '${NOVA_WEB_PORT:-8080}:8080'
+    restart: unless-stopped
