@@ -17,7 +17,7 @@ These are design rules, and a break of any of them is a security bug:
 | Rule | Detail |
 | --- | --- |
 | The model never gets a shell | Tools run fixed actions with Zod-validated values. The model picks a tool name and values, never a command. |
-| Nothing is deleted | No tool deletes or overwrites user data. |
+| No tool deletes your files | Nothing removes files or folders. The only deletion is `forget_fact`, which removes remembered facts when you ask. `write_code_file` can replace a file, but only after you approve the exact path. |
 | Ask before changing | Anything that moves, writes or sends needs an explicit Allow click (`ctx.confirm()`). |
 | Files stay in the user's folders | Paths are confined to the folders the user allows. |
 | Web reads are public only | `read_web_page` refuses private and local addresses and caps download size. |

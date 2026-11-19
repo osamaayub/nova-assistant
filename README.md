@@ -69,6 +69,8 @@ Hold **Space** to talk. **Alt+Space** shows or hides Nova. On first use Nova dow
 | "What did I write about the Lahore trip?" | Searches inside your notes and documents and names the file each answer came from |
 | "Remember that I prefer short answers" | Saved locally, recalled when relevant, editable in Settings |
 
+Every tool, its inputs and which agent holds it are listed in the [tool reference](docs/tools.md).
+
 Also included: four characters plus a custom one, a command-center view with a live crew board, a phone link over your Wi-Fi, wake word, and start with Windows.
 
 ## Architecture
@@ -300,7 +302,8 @@ docs/                          # project.md (what), plan.md (order), screenshots
 2. If it moves, sends, writes or spends, call `ctx.confirm()` before acting. Never add a tool that deletes.
 3. Give it to exactly one specialist in `team.ts` (and to `TOOLS` in `tools/index.ts` for single mode).
 4. Add a test with the fake platform, including the declined path.
-5. If you changed tool names or descriptions, update `training/build_dataset.py` and retrain.
+5. Add it to [`docs/tools.md`](docs/tools.md). A test fails if a tool is missing from that page.
+6. If you changed tool names or descriptions, update `training/build_dataset.py` and retrain.
 
 A tool that changes user data, sends messages or spends money needs the owner's approval first. See [`CLAUDE.md`](CLAUDE.md).
 

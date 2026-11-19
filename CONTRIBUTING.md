@@ -45,7 +45,8 @@ Changes to `src/shared/types.ts` or the `Provider` interface are contract change
 2. If it moves, sends or writes, call `ctx.confirm()` before acting.
 3. Give it to exactly one specialist in `team.ts` (and to `TOOLS` in `tools/index.ts` for single mode).
 4. Add a test with the fake platform, including the declined path.
-5. If you changed tool names or descriptions, update `training/build_dataset.py`.
+5. Add it to `docs/tools.md`. A test fails if a tool is missing from that page.
+6. If you changed tool names or descriptions, update `training/build_dataset.py`.
 
 ## Pull requests
 
