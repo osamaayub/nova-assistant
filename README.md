@@ -205,7 +205,7 @@ Chrome may also ask for local network access: choose Allow. The web build adds `
 
 ## Fine-tuning (experimental)
 
-[`training/`](training/) contains a pipeline that fine-tunes a small open model (Qwen2.5 3B, QLoRA) to be a better team-mode main agent: choose the right specialist, write self-contained tasks, parallelize independent work, ask when information is missing, and keep replies short and spoken.
+[`training/`](training/) contains a pipeline that fine-tunes a small open model (Qwen3 4B Instruct 2507, Apache 2.0, QLoRA) to be a better team-mode main agent: choose the right specialist, write self-contained tasks, parallelize independent work, ask when information is missing, and keep replies short and spoken.
 
 | Piece | File |
 | --- | --- |
@@ -221,17 +221,31 @@ Status: the run has been started but not yet evaluated. A tuned model should onl
 | --- | --- |
 | `npm run dev` | App with hot reload |
 | `npm test` | Vitest: agent loop, providers, team, tool safety, MCP, memory, remote |
+| `npm run test:coverage` | Same tests plus a coverage report in `coverage/`. Fails below the floor in `vitest.config.mts` |
 | `npm run typecheck` | TypeScript for main and window |
 | `npm run lint` | ESLint |
 | `npm run build:win` | Windows installer in `dist/` |
 
 Tests use fake providers, a fake platform and a fake web, so they need no network and no Windows APIs. Voice, app launching and the installer are verified by hand on a real PC.
 
+### Testing and coverage
+
+```bash
+npm test                 # run the suites
+npm run test:coverage    # run them and check the coverage floor
+```
+
+Coverage counts the Node side (`src/main` and `src/shared`): the agent loop, tools, providers, memory, RAG and the phone link server. It was about 68% of lines and 62% of branches when the floor was set (floor: 65% lines, 64% statements, 62% functions, 58% branches). CI runs `test:coverage`, so a pull request that drops below the floor fails. The window (`src/renderer`), voice and the Windows-only code are not counted because they are checked by hand. Raise the floor in `vitest.config.mts` when you add tests.
+
+### Configuration
+
+Nova needs no environment variables or `.env` file. The brain, keys, voice and connectors are set in the app (**Settings**), and the Claude key is stored encrypted on your PC. The only build-time variable is `VERCEL=1`, which CI and Vercel set to build the web preview.
+
 ### CI/CD
 
 | Workflow | File | When | Does |
 | --- | --- | --- | --- |
-| **CI** | `ci.yml` | Every PR and push to `main` | Runs Lint, Typecheck, Unit tests (Windows) and Build (desktop and web) in parallel. Also checks the desktop CSP stays strict and the web one allows local Ollama. Branch protection needs only **CI passed**. |
+| **CI** | `ci.yml` | Every PR and push to `main` | Runs Lint, Typecheck, Unit tests with the coverage floor (Windows) and Build (desktop and web) in parallel, plus an informational dependency audit. Also checks the desktop CSP stays strict and the web one allows local Ollama. Branch protection needs only **CI passed**. |
 | **CD - Release Windows installer** | `cd-release.yml` | Run workflow on `main`, or push a `v*` tag | **Verify** (runs CI), then **Build installer** (read-only token), then **Publish GitHub Release** (the only job that can write). Attaches the installer and `SHA256SUMS.txt`. A tag that does not match `package.json` stops the run. |
 | **Security audit** | `security-audit.yml` | Weekly, on demand, when the lockfile changes | `npm audit` on production dependencies. |
 | Dependabot | `dependabot.yml` | Weekly | Grouped update PRs for npm and GitHub Actions. |

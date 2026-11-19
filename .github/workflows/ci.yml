@@ -73,8 +73,8 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci --ignore-scripts
-      - name: Run Vitest
-        run: npm test
+      - name: Run Vitest with the coverage floor
+        run: npm run test:coverage
 
   build:
     name: Build (desktop and web)
@@ -102,6 +102,29 @@ jobs:
           VERCEL: '1'
       - name: Check the web CSP allows local Ollama
         run: node scripts/check-csp.mjs web
+
+  # Informational: an old advisory in a dependency should not block an unrelated change, so this
+  # job is not in the "CI passed" list. A red run here is a prompt to update. The weekly
+  # security-audit.yml run is the alarm.
+  audit:
+    name: Dependency audit (informational)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Node from .nvmrc
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
 
   ci-passed:
     name: CI passed
